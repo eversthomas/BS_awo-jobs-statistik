@@ -1,0 +1,130 @@
+Schritt 3: API-Importer + Stundenextraktion
+
+Lies zuerst ARCHITECTURE.md vollständig.
+Aufgabe Schritt 3: Erstelle den API-Importer und den Stunden-Parser.
+
+Erstelle src/Parser/StundenParser.php mit einer statischen Methode parse(string $html): ?float
+
+HTML-Tags entfernen via strip_tags
+Regex nach einfacher Zahl: z.B. "21,00 Stunden" oder "39 Std." → float zurückgeben
+Regex nach Spanne: z.B. "25 bis 30 Stunden" → höheren Wert zurückgeben
+Komma als Dezimaltrennzeichen normalisieren
+Kein Match → NULL zurückgeben
+
+
+Erstelle src/Import/ApiImporter.php der ImportInterface implementiert
+
+Konstruktor: __construct(object $db, string $apiUrl)
+API per wp_remote_get() abrufen – das ist die einzige WordPress-Abhängigkeit die hier erlaubt ist, alternativ file_get_contents wenn kein WordPress verfügbar
+JSON dekodieren, über Datensätze iterieren
+Felder mappen: Stellennummer → stellennummer, Stellenbezeichnung → titel, Einrichtung → einrichtung, Fachbereich → fachbereich_boerse, Mandantnr/Einrichtungsnr → fachbereich_intern, Anstellungsart → anstellungsart, Vertragsart → vertragsart, Zeitmodell → zeitmodell, Startdatum → startdatum, Stopdatum → stopdatum, PLZ_Einsatzort → plz_einsatzort, Einsatzort → einsatzort
+Unix-Timestamps (Startdatum, Stopdatum, Anlagedatum) in YYYY-MM-DD umwandeln
+Stundenzahl aus Feld Infos via StundenParser::parse() extrahieren → stunden, stunden_quelle = 'api'
+INSERT ... ON DUPLICATE KEY UPDATE in bs_awojobs_ausschreibungen, quelle = 'api', zuletzt_gesehen_api = NOW()
+Wenn Stellennummer bereits aus Excel existiert: nur fehlende Felder ergänzen, quelle = 'beide' setzen
+
+
+
+Testkriterium: test-import.php anpassen um den ApiImporter aufzurufen. Prüfen ob Stundenzahl korrekt extrahiert wird und quelle bei bereits importierten Excel-Stellen auf "beide" wechselt.
+
+
+Schritt 4: Deduplizierung / Logische Stellen
+
+Lies zuerst ARCHITECTURE.md vollständig.
+Aufgabe Schritt 4: Erstelle die Deduplizierungslogik für logische Stellen.
+
+Erstelle src/Dedup/LogischeStellen.php
+
+Konstruktor: __construct(object $db)
+Methode run(): array – Rückgabe: ['erstellt' => int, 'zugeordnet' => int]
+Logik:
+
+Alle Ausschreibungen aus bs_awojobs_ausschreibungen laden
+Gruppieren nach titel + einrichtung (case-insensitive, getrimmt)
+Für jede Gruppe: prüfen ob bereits eine logische Stelle mit diesem titel + einrichtung in bs_awojobs_logische_stellen existiert
+Wenn nicht: neue logische Stelle anlegen, manuell_verifiziert = 0
+Für jede Ausschreibung der Gruppe: Eintrag in bs_awojobs_zuordnungen anlegen (zuordnungstyp = 'auto'), falls noch nicht vorhanden
+
+
+Methode manuellZuordnen(string $stellennummer, int $logischeStellId): bool – setzt zuordnungstyp = 'manuell' und manuell_verifiziert = 1 auf der logischen Stelle
+Methode zuordnungTrennen(string $stellennummer): bool – entfernt Zuordnung und legt neue eigenständige logische Stelle an
+
+
+
+Testkriterium: run() aufrufen, in Adminer prüfen ob bs_awojobs_logische_stellen und bs_awojobs_zuordnungen korrekt befüllt sind. Jahresend-Kopien (gleicher Titel + Einrichtung) müssen derselben logischen Stelle zugeordnet sein.
+
+
+Schritt 5: Analyse-Module
+
+Lies zuerst ARCHITECTURE.md vollständig.
+Aufgabe Schritt 5: Erstelle die drei Analyse-Module.
+5a – src/Analysis/VzaCalculator.php
+
+Konstruktor: __construct(object $db, int $vollzeitStunden = 39)
+Methode berechneAktuell(): array – VZÄ aller aktuell offenen Stellen (die in zuletzt_gesehen_api aktuell sind), gruppiert nach fachbereich_boerse und fachbereich_intern
+Methode berechneGesamt(): float – Summe aller VZÄ aktuell offener Stellen
+VZÄ-Formel: stunden / vollzeitStunden, bei NULL Stunden und Zeitmodell "Vollzeit" → 1.0, bei Teilzeit ohne Stunden → NULL (als "unbekannt" kennzeichnen)
+
+5b – src/Analysis/FluktuationAnalyzer.php
+
+Konstruktor: __construct(object $db)
+Methode berechne(): array – pro logischer Stelle: Anzahl der Ausschreibungen, Zeitraum erste bis letzte Ausschreibung, Durchschnitt Tage zwischen Ausschreibungen
+Methode haeufigsteStellen(int $limit = 10): array – Top-N logische Stellen nach Ausschreibungshäufigkeit
+
+5c – src/Analysis/VakanzAnalyzer.php
+
+Konstruktor: __construct(object $db)
+Methode berechne(): array – pro logischer Stelle: durchschnittliche Vakanzzeit in Tagen (von startdatum bis stopdatum jeder Ausschreibung)
+Methode offenSeit(): array – aktuell offene Stellen mit Anzahl Tage seit startdatum
+
+Testkriterium: Jede Methode einmal aufrufen, Ergebnis-Array ausgeben und auf Plausibilität prüfen.
+
+
+Schritt 6: Snapshot-Cronjob
+
+Lies zuerst ARCHITECTURE.md vollständig.
+Aufgabe Schritt 6: Erstelle den täglichen API-Snapshot-Service.
+
+Erstelle src/Snapshot/SnapshotService.php
+
+Konstruktor: __construct(object $db, string $apiUrl)
+Methode run(): array – Rückgabe: ['neu' => int, 'aktualisiert' => int]
+Logik:
+
+Aktuelle API abrufen, alle Stellennummern + Stunden + Zeitmodell erfassen
+Für jede Stelle: Eintrag in bs_awojobs_snapshots für heutiges Datum anlegen (status = 'online'), falls noch kein Eintrag für heute existiert
+Stellen die gestern noch online waren, heute aber nicht mehr: neuen Snapshot-Eintrag mit status = 'offline' anlegen
+zuletzt_gesehen_api in bs_awojobs_ausschreibungen aktualisieren
+
+
+
+
+Erstelle wordpress/Cron/CronHandler.php
+
+Registriert WordPress-Cronjob bei Plugin-Aktivierung (wp_schedule_event)
+Hook ruft SnapshotService::run() auf
+Cronjob-Intervall aus Konfigurationstabelle lesen (cronjob_intervall)
+Cronjob bei Plugin-Deaktivierung wieder entfernen (wp_clear_scheduled_hook)
+
+
+
+Testkriterium: Cronjob manuell triggern, in bs_awojobs_snapshots prüfen ob Einträge mit heutigem Datum und status = 'online' erscheinen.
+
+
+Schritt 7: WordPress Admin-UI
+
+Lies zuerst ARCHITECTURE.md vollständig.
+Aufgabe Schritt 7: Erstelle die WordPress Admin-Oberfläche.
+
+Erstelle wordpress/Admin/AdminPage.php
+
+Registriert einen Menüpunkt "BS AWO Jobs Statistik" im WordPress-Admin
+Unterseiten: "Dashboard", "Import", "Logische Stellen", "Einstellungen"
+
+
+Dashboard: Zeigt Kernindikatoren an – Anzahl offene Stellen, Gesamt-VZÄ, Top-10 Fluktuationsstellen, längste offene Vakanzen. Alle Werte aus den Analyse-Modulen.
+Import: Zwei Bereiche – (1) Datei-Upload für Excel/CSV mit Fortschrittsanzeige und Ergebnis-Zusammenfassung, (2) Button "API jetzt synchronisieren" der ApiImporter und SnapshotService manuell triggert. Nach jedem Import automatisch LogischeStellen::run() aufrufen.
+Logische Stellen: Tabellarische Übersicht aller logischen Stellen mit ihren zugeordneten Ausschreibungen. Pro Zeile: Button "Zuordnung trennen", Möglichkeit zwei Stellen manuell zusammenzuführen, Badge "automatisch" / "verifiziert".
+Einstellungen (wordpress/Admin/SettingsPage.php): Formular für alle Konfigurationseinträge aus bs_awojobs_konfiguration – API-URL, Vollzeitstunden, Fachbereich-Modus, Cronjob-Intervall. Ganz unten separater Bereich "Gefahrenzone" mit Button "Alle Daten unwiderruflich löschen" + Bestätigungsdialog.
+
+Testkriterium: Alle vier Unterseiten im WordPress-Admin aufrufen, Einstellungen speichern und prüfen ob Werte in bs_awojobs_konfiguration aktualisiert werden. Dashboard zeigt plausible Zahlen.
