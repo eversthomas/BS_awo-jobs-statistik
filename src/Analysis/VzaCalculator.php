@@ -131,7 +131,7 @@ final class VzaCalculator
 
             $fbBoerse = StringNormalizer::fachbereich($row['fachbereich_boerse'] ?? null);
             $fbIntern = StringNormalizer::fachbereich($row['fachbereich_intern'] ?? null);
-            $einrichtung = trim((string) ($row['einrichtung'] ?? '')) ?: '(leer)';
+            $einrichtung = StringNormalizer::einrichtung($row['einrichtung'] ?? null);
 
             $boerse[$fbBoerse][$einrichtung] = ($boerse[$fbBoerse][$einrichtung] ?? 0) + $vza;
             $intern[$fbIntern][$einrichtung] = ($intern[$fbIntern][$einrichtung] ?? 0) + $vza;

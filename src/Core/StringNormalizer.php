@@ -26,4 +26,21 @@ final class StringNormalizer
         }
         return mb_convert_case($s, MB_CASE_TITLE, 'UTF-8');
     }
+
+    /**
+     * Einrichtung normalisieren für Gruppierungen.
+     * "Kindertagesstätte" und "Kita" werden gleich behandelt, zusätzlich Title-Case.
+     *
+     * @param string|null $value Rohwert aus DB
+     * @return string Normalisierter Wert, oder '(leer)' bei leerem Input
+     */
+    public static function einrichtung(?string $value): string
+    {
+        $s = trim((string) ($value ?? ''));
+        if ($s === '') {
+            return '(leer)';
+        }
+        $s = str_ireplace('Kindertagesstätte', 'Kita', $s);
+        return mb_convert_case($s, MB_CASE_TITLE, 'UTF-8');
+    }
 }
