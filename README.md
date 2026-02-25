@@ -17,6 +17,8 @@ Vollständige Architektur und Vorgaben: **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 | 5 | Analyse-Module (VZÄ, Fluktuation, Vakanz) | ✅ erledigt |
 | 6 | Cronjob: täglicher API-Snapshot | ✅ erledigt |
 | 7 | WordPress Admin-UI (Dashboard, Import, Logische Stellen, Einstellungen) | ✅ erledigt |
+| 8 | Charts im Dashboard (VZÄ-Verlauf, Fluktuation, Vakanzen, Fachbereiche) | ✅ erledigt |
+| 9 | Excel-Export (formatiert, Einzeltabs + Gesamt-Export) | ✅ erledigt |
 
 **Tests:** `test-analysis.php` (Analyse), `test-snapshot.php` (Snapshot manuell ausführen).
 
@@ -70,6 +72,34 @@ Eine Stelle gilt als **aktuell offen**, wenn sie beim letzten API-Abruf noch vor
 | **Anzahl Stellen** | Zählung | Offene Stellen pro PLZ (nur mit erfasster PLZ) |
 | **VZÄ gesamt** | Summe | Summe der VZÄ pro PLZ |
 | **Stellennummern, Stellentitel** | Auflistung | Alle zugehörigen Nummern und Titel zur gezielten Suche |
+
+---
+
+## Excel-Export
+
+Alle Dashboard-Auswertungen können als Excel-Dateien (.xlsx) exportiert werden. Die exportierten Tabellen sind professionell formatiert (blauer Tabellenkopf, Zebra-Streifen, Rahmen, automatische Spaltenbreite, Zahlenformate für VZÄ).
+
+### Einzelexport
+
+Jeder Dashboard-Tab bietet einen Button „Als Excel exportieren“ für den jeweiligen Bereich:
+
+- **Übersicht** – Kennzahlen und Zählungen (Titel, Fachbereich, PLZ)
+- **Fluktuation** – Top 100 Fluktuationsstellen
+- **Vakanzen** – Alle offenen Stellen mit Tagen
+- **Fachbereiche** – VZÄ nach Börse, Mandantenfeld und pro Einrichtung
+- **PLZ** – Statistik nach Postleitzahl
+
+### Gesamt-Export
+
+Ein zentraler Button **„Alle Daten als Excel exportieren“** im Dashboard erzeugt eine einzige Excel-Datei mit **5 Tabellenblättern**:
+
+1. Übersicht  
+2. Fluktuation  
+3. Offene Vakanzen  
+4. Fachbereiche  
+5. PLZ  
+
+Dateiname: `bs-awo-jobs-statistik-gesamt-YYYY-MM-DD.xlsx`
 
 ---
 
@@ -145,7 +175,8 @@ Eine Stelle gilt als **aktuell offen**, wenn sie beim letzten API-Abruf noch vor
 ## Technik
 
 - PHP ≥ 7.4, WordPress (wpdb, Plugin-API)
-- Composer: `phpoffice/phpspreadsheet` (Excel/CSV); `vendor/` wird mitcommittet
+- Composer: `phpoffice/phpspreadsheet` (Excel/CSV-Import, Excel-Export); `vendor/` wird mitcommittet
+- Charts: Chart.js (via CDN)
 - Core ohne WordPress-Abhängigkeiten (außer wo nötig); DB-Zugriff per Dependency Injection
 
 ---
