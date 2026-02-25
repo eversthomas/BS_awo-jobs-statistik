@@ -42,7 +42,7 @@ if (is_admin()) {
     });
     \add_action('load-toplevel_page_bs-awo-jobs-statistik', static function () {
         $exportTab = isset($_GET['bs_export']) ? \sanitize_key($_GET['bs_export']) : '';
-        $validExportTabs = ['uebersicht', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz'];
+        $validExportTabs = ['uebersicht', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz', 'alle'];
         if ($exportTab !== '' && \in_array($exportTab, $validExportTabs, true) && \current_user_can('manage_options')) {
             if (\wp_verify_nonce($_GET['_wpnonce'] ?? '', 'bs_awo_export_' . $exportTab)) {
                 $tblConfig = $GLOBALS['wpdb']->prefix . \BS_Awo_Jobs_Statistik\Core\Database::TABLE_KONFIGURATION;

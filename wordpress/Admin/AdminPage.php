@@ -78,6 +78,11 @@ final class AdminPage
         <div class="wrap">
             <h1><?php echo esc_html__('Dashboard', 'bs-awo-jobs-statistik'); ?></h1>
 
+            <p style="margin-bottom:1rem;">
+                <a href="<?php echo esc_url(wp_nonce_url(add_query_arg(['bs_export' => 'alle'], admin_url('admin.php?page=' . self::PAGE_DASHBOARD)), 'bs_awo_export_alle')); ?>" class="button button-primary"><?php echo esc_html__('Alle Daten als Excel exportieren', 'bs-awo-jobs-statistik'); ?></a>
+                <span class="description" style="margin-left:0.5rem;"><?php echo esc_html__('Exportiert Übersicht, Fluktuation, Vakanzen, Fachbereiche und PLZ in eine Datei mit getrennten Tabellenblättern.', 'bs-awo-jobs-statistik'); ?></span>
+            </p>
+
             <nav class="nav-tab-wrapper wp-clearfix" style="margin-bottom:0;">
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=uebersicht" class="nav-tab <?php echo $activeTab === 'uebersicht' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Übersicht', 'bs-awo-jobs-statistik'); ?></a>
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=charts" class="nav-tab <?php echo $activeTab === 'charts' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Charts', 'bs-awo-jobs-statistik'); ?></a>
