@@ -106,6 +106,15 @@ final class Installer
 
     /**
      * Standardwerte in bs_awojobs_konfiguration einfügen (ARCHITECTURE.md).
+     * Öffentlich für SettingsPage (nach Daten-Löschung).
+     */
+    public static function seedKonfigurationStatic($wpdb): void
+    {
+        self::seedKonfiguration($wpdb);
+    }
+
+    /**
+     * Standardwerte in bs_awojobs_konfiguration einfügen (ARCHITECTURE.md).
      */
     private static function seedKonfiguration($wpdb): void
     {

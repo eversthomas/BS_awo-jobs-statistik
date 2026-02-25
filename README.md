@@ -18,12 +18,11 @@ Fortschritt orientiert sich am Entwicklungsfahrplan in ARCHITECTURE.md. Detailli
 | 4 | Deduplizierung / Logische Stellen (Auto + manuelle Korrektur) | ✅ erledigt |
 | 5 | Analyse-Module (VZÄ, Fluktuation, Vakanz) | ✅ erledigt |
 | 6 | Cronjob: täglicher API-Snapshot | ✅ erledigt |
-| **7** | **WordPress Admin-UI** (Dashboard, Import, Logische Stellen, Einstellungen) | ⏳ **als nächstes** |
+| 7 | WordPress Admin-UI (Dashboard, Import, Logische Stellen, Einstellungen) | ✅ erledigt |
 
-### Wo weitermachen?
+### Status
 
-- **Nächster Schritt:** **Schritt 7 – WordPress Admin-UI.**  
-  Vollständige Beschreibung in **`.prompts2do`** (ab „Schritt 7: WordPress Admin-UI“).
+Alle Schritte des Entwicklungsfahrplans sind umgesetzt.
 - **Tests:** `test-analysis.php` (Analyse), `test-snapshot.php` (Snapshot manuell ausführen).
 
 ---
