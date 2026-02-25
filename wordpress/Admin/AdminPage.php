@@ -70,7 +70,7 @@ final class AdminPage
         $uebersichtCounts = $vakanz->getUebersichtCounts();
 
         $activeTab = sanitize_key($_GET['bs_tab'] ?? 'uebersicht');
-        $tabs = ['uebersicht', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz'];
+        $tabs = ['uebersicht', 'charts', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz'];
         if (!in_array($activeTab, $tabs, true)) {
             $activeTab = 'uebersicht';
         }
@@ -80,6 +80,7 @@ final class AdminPage
 
             <nav class="nav-tab-wrapper wp-clearfix" style="margin-bottom:0;">
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=uebersicht" class="nav-tab <?php echo $activeTab === 'uebersicht' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Übersicht', 'bs-awo-jobs-statistik'); ?></a>
+                <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=charts" class="nav-tab <?php echo $activeTab === 'charts' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Charts', 'bs-awo-jobs-statistik'); ?></a>
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=fluktuation" class="nav-tab <?php echo $activeTab === 'fluktuation' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Fluktuation', 'bs-awo-jobs-statistik'); ?></a>
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=vakanzen" class="nav-tab <?php echo $activeTab === 'vakanzen' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Vakanzen', 'bs-awo-jobs-statistik'); ?></a>
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=fachbereiche" class="nav-tab <?php echo $activeTab === 'fachbereiche' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Fachbereiche', 'bs-awo-jobs-statistik'); ?></a>
@@ -126,6 +127,55 @@ final class AdminPage
                         <?php if (empty($uebersichtCounts['nach_plz'])): ?><tr><td colspan="2"><?php echo esc_html__('Keine Daten.', 'bs-awo-jobs-statistik'); ?></td></tr><?php endif; ?>
                         </tbody></table></div>
                 </div>
+            <?php endif; ?>
+
+            <?php if ($activeTab === 'charts'): ?>
+                <?php
+                $vzaVerlauf = $vza->berechneVzaVerlauf(90);
+                $chartVzaLabels = array_keys($vzaVerlauf);
+                $chartVzaData = array_values($vzaVerlauf);
+                $chartFlukLabels = array_map(static fn ($r) => wp_strip_all_tags(mb_substr($r['titel'], 0, 35) . (mb_strlen($r['titel']) > 35 ? '…' : '')), $top10);
+                $chartFlukData = array_column($top10, 'anzahl_ausschreibungen');
+                $chartVakanzLabels = array_map(static fn ($r) => $r['stellennummer'] . ' (' . mb_substr($r['titel'], 0, 25) . (mb_strlen($r['titel']) > 25 ? '…' : '') . ')', array_slice($offen, 0, 10));
+                $chartVakanzData = array_map(static fn ($r) => $r['tage_offen'], array_slice($offen, 0, 10));
+                ?>
+                <div class="bs-awo-charts" style="display:grid;grid-template-columns:1fr;gap:2rem;">
+                    <div>
+                        <h3><?php echo esc_html__('VZÄ-Verlauf (letzte 90 Tage)', 'bs-awo-jobs-statistik'); ?></h3>
+                        <p class="description"><?php echo esc_html__('Gesamt-VZÄ offener Stellen je Snapshot-Datum. Erfordert tägliche API-Snapshots.', 'bs-awo-jobs-statistik'); ?></p>
+                        <?php if (empty($vzaVerlauf)): ?>
+                            <p class="notice notice-info inline"><?php echo esc_html__('Keine Snapshot-Daten. API regelmäßig synchronisieren, damit der VZÄ-Verlauf angezeigt wird.', 'bs-awo-jobs-statistik'); ?></p>
+                        <?php endif; ?>
+                        <div style="max-width:800px;height:300px;">
+                            <canvas id="bs-awo-chart-vza"></canvas>
+                        </div>
+                    </div>
+                    <div>
+                        <h3><?php echo esc_html__('Top 10 Fluktuationsstellen', 'bs-awo-jobs-statistik'); ?></h3>
+                        <p class="description"><?php echo esc_html__('Logische Stellen mit den meisten Ausschreibungen.', 'bs-awo-jobs-statistik'); ?></p>
+                        <div style="max-width:800px;height:300px;">
+                            <canvas id="bs-awo-chart-fluktuation"></canvas>
+                        </div>
+                    </div>
+                    <div>
+                        <h3><?php echo esc_html__('Längste offene Vakanzen', 'bs-awo-jobs-statistik'); ?></h3>
+                        <p class="description"><?php echo esc_html__('Top 10 Stellen nach Dauer (Tage offen).', 'bs-awo-jobs-statistik'); ?></p>
+                        <div style="max-width:800px;height:300px;">
+                            <canvas id="bs-awo-chart-vakanzen"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <?php
+                wp_localize_script('chartjs', 'bsAwoChartsData', [
+                    'vzaLabels' => $chartVzaLabels,
+                    'vzaData' => array_map('floatval', $chartVzaData),
+                    'flukLabels' => $chartFlukLabels,
+                    'flukData' => array_map('intval', $chartFlukData),
+                    'vakanzLabels' => $chartVakanzLabels,
+                    'vakanzData' => array_map('intval', $chartVakanzData),
+                ]);
+                wp_add_inline_script('chartjs', "(function(){if(typeof Chart==='undefined')return;var d=window.bsAwoChartsData||{};var c1=document.getElementById('bs-awo-chart-vza');var c2=document.getElementById('bs-awo-chart-fluktuation');var c3=document.getElementById('bs-awo-chart-vakanzen');if(c1)new Chart(c1,{type:'line',data:{labels:d.vzaLabels||[],datasets:[{label:'VZÄ',data:d.vzaData||[],borderColor:'#2271b1',backgroundColor:'rgba(34,113,177,0.1)',fill:true,tension:0.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}});if(c2)new Chart(c2,{type:'bar',data:{labels:d.flukLabels||[],datasets:[{label:'Ausschreibungen',data:d.flukData||[],backgroundColor:'#00a32a'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{beginAtZero:true,ticks:{stepSize:1}}}}});if(c3)new Chart(c3,{type:'bar',data:{labels:d.vakanzLabels||[],datasets:[{label:'Tage offen',data:d.vakanzData||[],backgroundColor:'#d63638'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{beginAtZero:true,ticks:{stepSize:1}}}}});})();");
+                ?>
             <?php endif; ?>
 
             <?php if ($activeTab === 'fluktuation'): ?>

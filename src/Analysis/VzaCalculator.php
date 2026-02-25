@@ -98,6 +98,44 @@ final class VzaCalculator
     }
 
     /**
+     * VZÄ-Verlauf aus Snapshots (für Charts).
+     * Pro Tag die Summe der VZÄ aller online-Stellen.
+     *
+     * @param int $tage Anzahl Tage rückwärts
+     * @return array<string, float> Datum (Y-m-d) => VZÄ-Summe
+     */
+    public function berechneVzaVerlauf(int $tage = 90): array
+    {
+        $tblSnap = $this->db->prefix . Database::TABLE_SNAPSHOTS;
+        $vollzeit = (float) $this->vollzeitStunden;
+
+        $rows = $this->db->get_results(
+            $this->db->prepare(
+                "SELECT snapshot_datum,
+                        SUM(CASE
+                            WHEN stunden IS NOT NULL AND stunden > 0 THEN stunden / %f
+                            WHEN zeitmodell LIKE '%%Vollzeit%%' THEN 1.0
+                            ELSE 0
+                        END) AS vza_summe
+                 FROM {$tblSnap}
+                 WHERE status = 'online'
+                   AND snapshot_datum >= DATE_SUB(CURDATE(), INTERVAL %d DAY)
+                 GROUP BY snapshot_datum
+                 ORDER BY snapshot_datum",
+                $vollzeit,
+                $tage
+            ),
+            ARRAY_A
+        );
+
+        $result = [];
+        foreach ($rows ?: [] as $row) {
+            $result[(string) $row['snapshot_datum']] = round((float) ($row['vza_summe'] ?? 0), 2);
+        }
+        return $result;
+    }
+
+    /**
      * VZÄ für eine einzelne Stelle.
      * stunden/vollzeitStunden; NULL + Vollzeit → 1.0; Teilzeit ohne Stunden → NULL.
      *

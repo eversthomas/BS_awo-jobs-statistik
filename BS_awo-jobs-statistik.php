@@ -40,4 +40,15 @@ if (is_admin()) {
         $admin = new \BS_Awo_Jobs_Statistik\WordPress\Admin\AdminPage($GLOBALS['wpdb']);
         $admin->registerMenu();
     });
+    \add_action('admin_enqueue_scripts', static function (string $hook) {
+        if (str_contains($hook, 'bs-awo-jobs-statistik')) {
+            \wp_enqueue_script(
+                'chartjs',
+                'https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js',
+                [],
+                '4.4.6',
+                true
+            );
+        }
+    });
 }
