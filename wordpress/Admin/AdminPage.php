@@ -90,6 +90,7 @@ final class AdminPage
             <div class="bs-awo-tab-content" style="background:#fff;padding:1.5rem;box-shadow:0 1px 3px rgba(0,0,0,.1);margin-top:-1px;border:1px solid #c3c4c7;border-top:none;">
 
             <?php if ($activeTab === 'uebersicht'): ?>
+                <p style="margin-bottom:1rem;"><a href="<?php echo esc_url(wp_nonce_url(add_query_arg(['bs_export' => 'uebersicht', 'bs_tab' => 'uebersicht'], admin_url('admin.php?page=' . self::PAGE_DASHBOARD)), 'bs_awo_export_uebersicht')); ?>" class="button"><?php echo esc_html__('Als Excel exportieren', 'bs-awo-jobs-statistik'); ?></a></p>
                 <div class="bs-awo-stats-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin-bottom:2rem;">
                     <div class="card" style="padding:1rem;border-left:4px solid #2271b1;">
                         <strong><?php echo esc_html__('Offene Stellen', 'bs-awo-jobs-statistik'); ?></strong>
@@ -192,6 +193,7 @@ final class AdminPage
             <?php endif; ?>
 
             <?php if ($activeTab === 'fluktuation'): ?>
+                <p style="margin-bottom:1rem;"><a href="<?php echo esc_url(wp_nonce_url(add_query_arg(['bs_export' => 'fluktuation', 'bs_tab' => 'fluktuation'], admin_url('admin.php?page=' . self::PAGE_DASHBOARD)), 'bs_awo_export_fluktuation')); ?>" class="button"><?php echo esc_html__('Als Excel exportieren', 'bs-awo-jobs-statistik'); ?></a></p>
                 <h2><?php echo esc_html__('Top 10 Fluktuationsstellen', 'bs-awo-jobs-statistik'); ?></h2>
                 <p class="description"><?php echo esc_html__('Logische Stellen mit den meisten Ausschreibungen. Stellennummern: online zuerst, dann offline (jeweils neueste zuerst).', 'bs-awo-jobs-statistik'); ?></p>
                 <table class="widefat striped">
@@ -242,6 +244,7 @@ final class AdminPage
             <?php endif; ?>
 
             <?php if ($activeTab === 'vakanzen'): ?>
+                <p style="margin-bottom:1rem;"><a href="<?php echo esc_url(wp_nonce_url(add_query_arg(['bs_export' => 'vakanzen', 'bs_tab' => 'vakanzen'], admin_url('admin.php?page=' . self::PAGE_DASHBOARD)), 'bs_awo_export_vakanzen')); ?>" class="button"><?php echo esc_html__('Als Excel exportieren', 'bs-awo-jobs-statistik'); ?></a></p>
                 <h2><?php echo esc_html__('Offene Vakanzen', 'bs-awo-jobs-statistik'); ?></h2>
                 <table class="widefat striped">
                     <thead><tr><th><?php echo esc_html__('Stellennr.', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Tage', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Titel', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Ort', 'bs-awo-jobs-statistik'); ?></th></tr></thead>
@@ -272,6 +275,7 @@ final class AdminPage
             <?php endif; ?>
 
             <?php if ($activeTab === 'fachbereiche'): ?>
+                <p style="margin-bottom:1rem;"><a href="<?php echo esc_url(wp_nonce_url(add_query_arg(['bs_export' => 'fachbereiche', 'bs_tab' => 'fachbereiche'], admin_url('admin.php?page=' . self::PAGE_DASHBOARD)), 'bs_awo_export_fachbereiche')); ?>" class="button"><?php echo esc_html__('Als Excel exportieren', 'bs-awo-jobs-statistik'); ?></a></p>
                 <h2><?php echo esc_html__('VZÄ nach Fachbereich (Stellenbörse)', 'bs-awo-jobs-statistik'); ?></h2>
                 <p class="description"><?php echo esc_html__('Aktuell offene Stellen gruppiert nach Fachbereich der Stellenbörse.', 'bs-awo-jobs-statistik'); ?></p>
                 <table class="widefat striped">
@@ -357,6 +361,7 @@ final class AdminPage
             <?php endif; ?>
 
             <?php if ($activeTab === 'plz'): ?>
+                <p style="margin-bottom:1rem;"><a href="<?php echo esc_url(wp_nonce_url(add_query_arg(['bs_export' => 'plz', 'bs_tab' => 'plz'], admin_url('admin.php?page=' . self::PAGE_DASHBOARD)), 'bs_awo_export_plz')); ?>" class="button"><?php echo esc_html__('Als Excel exportieren', 'bs-awo-jobs-statistik'); ?></a></p>
                 <h2><?php echo esc_html__('Statistik nach Postleitzahl', 'bs-awo-jobs-statistik'); ?></h2>
                 <p class="description"><?php echo esc_html__('Aktuell offene Stellen nach PLZ. Stellennummern und Stellentitel zur gezielten Suche.', 'bs-awo-jobs-statistik'); ?></p>
                 <?php if (!empty($plzStats)): ?>

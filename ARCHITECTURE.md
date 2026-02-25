@@ -315,8 +315,10 @@ BS_awo-jobs-statistik/
 │   │   └── VakanzAnalyzer.php
 │   ├── Dedup/
 │   │   └── LogischeStellen.php    # Deduplizierung, Zuordnung
-│   └── Snapshot/
-│       └── SnapshotService.php    # Täglicher API-Snapshot
+│   ├── Snapshot/
+│   │   └── SnapshotService.php    # Täglicher API-Snapshot
+│   └── Export/
+│       └── ExcelExporter.php      # Excel-Export der Dashboard-Daten
 ├── wordpress/
 │   ├── Admin/
 │   │   ├── AdminPage.php

@@ -40,6 +40,18 @@ if (is_admin()) {
         $admin = new \BS_Awo_Jobs_Statistik\WordPress\Admin\AdminPage($GLOBALS['wpdb']);
         $admin->registerMenu();
     });
+    \add_action('load-toplevel_page_bs-awo-jobs-statistik', static function () {
+        $exportTab = isset($_GET['bs_export']) ? \sanitize_key($_GET['bs_export']) : '';
+        $validExportTabs = ['uebersicht', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz'];
+        if ($exportTab !== '' && \in_array($exportTab, $validExportTabs, true) && \current_user_can('manage_options')) {
+            if (\wp_verify_nonce($_GET['_wpnonce'] ?? '', 'bs_awo_export_' . $exportTab)) {
+                $tblConfig = $GLOBALS['wpdb']->prefix . \BS_Awo_Jobs_Statistik\Core\Database::TABLE_KONFIGURATION;
+                $vollzeit = (int) ($GLOBALS['wpdb']->get_var($GLOBALS['wpdb']->prepare("SELECT wert FROM {$tblConfig} WHERE schluessel = %s", 'vollzeit_stunden')) ?: 39);
+                $exporter = new \BS_Awo_Jobs_Statistik\Export\ExcelExporter($GLOBALS['wpdb'], $vollzeit);
+                $exporter->exportAndSend($exportTab);
+            }
+        }
+    });
     \add_action('admin_enqueue_scripts', static function (string $hook) {
         if (str_contains($hook, 'bs-awo-jobs-statistik')) {
             \wp_enqueue_script(
