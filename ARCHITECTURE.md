@@ -264,8 +264,8 @@ Die Stundenzahl steckt im HTML-Fließtext des API-Feldes `Infos`. Vorgehen:
 
 | Paket | Zweck |
 |---|---|
-| `phpoffice/phpspreadsheet` | Excel/CSV-Import |
-| `nesbot/carbon` | Datums-Normalisierung |
+| `phpoffice/phpspreadsheet` | Excel/CSV-Import, Excel-Export |
+| `mpdf/mpdf` | PDF-Export (Berichte mit Kennzahlen, Tabellen, Diagrammen) |
 
 Der `vendor/`-Ordner wird **mit ins Repository committed**, damit das Plugin ohne `composer install` funktioniert.
 
@@ -284,7 +284,7 @@ Der `vendor/`-Ordner wird **mit ins Repository committed**, damit das Plugin ohn
 | 7 | WordPress Admin-UI: Konfiguration, Import, Auswertungsdarstellung | Vollständig bedienbar ohne Code-Kenntnisse |
 | 8 | Charts im Dashboard (VZÄ-Verlauf, Fluktuation, Vakanzzeiten) | Diagramme laden, Daten stimmen mit Analyse-Modulen überein |
 | 9 | Excel-Export der statistischen Daten | Dashboard-Tabs als Excel-Dateien exportierbar |
-| 10 | PDF-Export (inkl. Charts) | PDF enthält Kennzahlen und eingebettete Diagramme |
+| 10 | PDF-Export (inkl. Charts) | ✅ PDF enthält Kennzahlen, Tabellen und eingebettete Diagramme (via QuickChart.io) |
 | 11 | UX-Verbesserungen | Fortschrittsanzeige beim Excel-Import, Filter/Suche in Logische Stellen |
 
 ---
@@ -318,7 +318,8 @@ BS_awo-jobs-statistik/
 │   ├── Snapshot/
 │   │   └── SnapshotService.php    # Täglicher API-Snapshot
 │   └── Export/
-│       └── ExcelExporter.php      # Excel-Export der Dashboard-Daten
+│       ├── ExcelExporter.php      # Excel-Export der Dashboard-Daten
+│       └── PdfExporter.php        # PDF-Export (Kennzahlen, Tabellen, Diagramme)
 ├── wordpress/
 │   ├── Admin/
 │   │   ├── AdminPage.php

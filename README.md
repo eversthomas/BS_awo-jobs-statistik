@@ -19,6 +19,8 @@ Vollständige Architektur und Vorgaben: **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 | 7 | WordPress Admin-UI (Dashboard, Import, Logische Stellen, Einstellungen) | ✅ erledigt |
 | 8 | Charts im Dashboard (VZÄ-Verlauf, Fluktuation, Vakanzen, Fachbereiche) | ✅ erledigt |
 | 9 | Excel-Export (formatiert, Einzeltabs + Gesamt-Export) | ✅ erledigt |
+| 10 | PDF-Export (Kennzahlen, Tabellen, Diagramme) | ✅ erledigt |
+| 11 | UX-Verbesserungen (Fortschrittsanzeige beim Import, Filter/Suche in Logische Stellen) | ✅ erledigt |
 
 **Tests:** `test-analysis.php` (Analyse), `test-snapshot.php` (Snapshot manuell ausführen).
 
@@ -101,6 +103,16 @@ Ein zentraler Button **„Alle Daten als Excel exportieren“** im Dashboard erz
 
 Dateiname: `bs-awo-jobs-statistik-gesamt-YYYY-MM-DD.xlsx`
 
+### PDF-Export
+
+Der Button **„Als PDF exportieren“** erzeugt einen Bericht im PDF-Format mit:
+
+- Kennzahlen (Offene Stellen, Gesamt-VZÄ, Unbekannt)
+- Diagrammen: VZÄ-Verlauf, Top 10 Fluktuation, längste Vakanzen, Fachbereiche (Pie)
+- Tabellen: Fluktuation, Vakanzen, Stellentitel
+
+Die Diagramme werden serverseitig über QuickChart.io erzeugt. Dateiname: `bs-awo-jobs-statistik-bericht-YYYY-MM-DD.pdf`
+
 ---
 
 ## Verhalten des Plugins – Was wird wann wie gespeichert?
@@ -124,6 +136,7 @@ Dateiname: `bs-awo-jobs-statistik-gesamt-YYYY-MM-DD.xlsx`
 ### Excel/CSV-Import
 
 - **Aktion:** Datei-Upload in der Admin-UI oder Ausführung von `test-import.php`.
+- **Fortschrittsanzeige:** Beim Klick auf „Datei importieren“ oder „API jetzt synchronisieren“ erscheint eine Ladeanzeige („Import wird ausgeführt, bitte warten…“), bis die Seite neu geladen ist.
 - **Speicherung:** Neue Zeilen in `bs_awojobs_ausschreibungen`; bei gleicher Stellennummer: `INSERT ... ON DUPLICATE KEY UPDATE` (Vorhandenes wird überschrieben).
 - **Feld `quelle`:** `"excel"` bei neu angelegten Einträgen.
 - **Stundenzahl:** Wird aus Excel nicht übernommen; bleibt NULL (nur Zeitmodell z.B. Vollzeit/Teilzeit).
@@ -149,6 +162,7 @@ Dateiname: `bs-awo-jobs-statistik-gesamt-YYYY-MM-DD.xlsx`
 
 ### Logische Stellen (Deduplizierung)
 
+- **Suche und Filter:** Auf der Seite „Logische Stellen“ können Einträge per Suchfeld (Titel, Einrichtung, Stellennummer) gefiltert und zusätzlich nach Status (Online/Offline, verifiziert/automatisch) eingegrenzt werden. Filterung erfolgt clientseitig ohne Seitenneulade.
 - **Automatisch:** Gruppierung aller Ausschreibungen nach `Titel + Einrichtung`; für jede Gruppe wird ggf. eine logische Stelle angelegt und die Ausschreibungen zugeordnet (`zuordnungstyp = "auto"`).
 - **Manuell:**
   - **Zuordnung trennen:** Entfernt die Zuordnung und legt für diese Stellennummer eine neue logische Stelle an; Zuordnung wird dauerhaft gespeichert.
@@ -175,8 +189,8 @@ Dateiname: `bs-awo-jobs-statistik-gesamt-YYYY-MM-DD.xlsx`
 ## Technik
 
 - PHP ≥ 7.4, WordPress (wpdb, Plugin-API)
-- Composer: `phpoffice/phpspreadsheet` (Excel/CSV-Import, Excel-Export); `vendor/` wird mitcommittet
-- Charts: Chart.js (via CDN)
+- Composer: `phpoffice/phpspreadsheet` (Excel/CSV), `mpdf/mpdf` (PDF-Export); `vendor/` wird mitcommittet
+- Charts: Chart.js (Dashboard, via CDN); QuickChart.io (PDF-Diagramme, externer API-Aufruf)
 - Core ohne WordPress-Abhängigkeiten (außer wo nötig); DB-Zugriff per Dependency Injection
 
 ---

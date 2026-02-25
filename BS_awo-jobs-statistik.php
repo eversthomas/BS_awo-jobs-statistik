@@ -42,14 +42,21 @@ if (is_admin()) {
     });
     \add_action('load-toplevel_page_bs-awo-jobs-statistik', static function () {
         $exportTab = isset($_GET['bs_export']) ? \sanitize_key($_GET['bs_export']) : '';
+        if ($exportTab === '' || !\current_user_can('manage_options')) {
+            return;
+        }
+        $tblConfig = $GLOBALS['wpdb']->prefix . \BS_Awo_Jobs_Statistik\Core\Database::TABLE_KONFIGURATION;
+        $vollzeit = (int) ($GLOBALS['wpdb']->get_var($GLOBALS['wpdb']->prepare("SELECT wert FROM {$tblConfig} WHERE schluessel = %s", 'vollzeit_stunden')) ?: 39);
+
+        if ($exportTab === 'pdf' && \wp_verify_nonce($_GET['_wpnonce'] ?? '', 'bs_awo_export_pdf')) {
+            $exporter = new \BS_Awo_Jobs_Statistik\Export\PdfExporter($GLOBALS['wpdb'], $vollzeit);
+            $exporter->exportAndSend();
+        }
+
         $validExportTabs = ['uebersicht', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz', 'alle'];
-        if ($exportTab !== '' && \in_array($exportTab, $validExportTabs, true) && \current_user_can('manage_options')) {
-            if (\wp_verify_nonce($_GET['_wpnonce'] ?? '', 'bs_awo_export_' . $exportTab)) {
-                $tblConfig = $GLOBALS['wpdb']->prefix . \BS_Awo_Jobs_Statistik\Core\Database::TABLE_KONFIGURATION;
-                $vollzeit = (int) ($GLOBALS['wpdb']->get_var($GLOBALS['wpdb']->prepare("SELECT wert FROM {$tblConfig} WHERE schluessel = %s", 'vollzeit_stunden')) ?: 39);
-                $exporter = new \BS_Awo_Jobs_Statistik\Export\ExcelExporter($GLOBALS['wpdb'], $vollzeit);
-                $exporter->exportAndSend($exportTab);
-            }
+        if (\in_array($exportTab, $validExportTabs, true) && \wp_verify_nonce($_GET['_wpnonce'] ?? '', 'bs_awo_export_' . $exportTab)) {
+            $exporter = new \BS_Awo_Jobs_Statistik\Export\ExcelExporter($GLOBALS['wpdb'], $vollzeit);
+            $exporter->exportAndSend($exportTab);
         }
     });
     \add_action('admin_enqueue_scripts', static function (string $hook) {
@@ -61,6 +68,14 @@ if (is_admin()) {
                 '4.4.6',
                 true
             );
+        }
+        if (str_contains($hook, 'bs-awo-jobs-import')) {
+            \wp_enqueue_script('jquery');
+            \wp_add_inline_script('jquery', 'jQuery(function($){$("#bs-awo-excel-import-form, #bs-awo-api-sync-form").on("submit",function(){$(this).find("input[type=submit], button[type=submit]").prop("disabled",true);$("#bs-awo-import-overlay").addClass("is-visible");});});');
+        }
+        if (str_contains($hook, 'bs-awo-jobs-logische')) {
+            \wp_enqueue_script('jquery');
+            \wp_add_inline_script('jquery', 'jQuery(function($){var rows=$(".bs-awo-logische-row"),total=rows.length;function update(){var q=$("#bs-awo-logische-suche").val().toLowerCase(),f=$("#bs-awo-logische-filter").val(),n=0;rows.each(function(){var r=$(this),s=r.attr("data-search")||"",o=r.attr("data-online")==="1",v=r.attr("data-verifiziert")==="1",m=(!q||s.indexOf(q)>=0)&&(!f||(f==="online"&&o)||(f==="offline"&&!o)||(f==="verifiziert"&&v)||(f==="automatisch"&&!v));r.toggle(m);if(m)n++;});$("#bs-awo-logische-treffer").text(n+"/"+total);}$("#bs-awo-logische-suche").on("input",update);$("#bs-awo-logische-filter").on("change",update);update();});');
         }
     });
 }

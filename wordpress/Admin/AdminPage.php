@@ -80,7 +80,8 @@ final class AdminPage
 
             <p style="margin-bottom:1rem;">
                 <a href="<?php echo esc_url(wp_nonce_url(add_query_arg(['bs_export' => 'alle'], admin_url('admin.php?page=' . self::PAGE_DASHBOARD)), 'bs_awo_export_alle')); ?>" class="button button-primary"><?php echo esc_html__('Alle Daten als Excel exportieren', 'bs-awo-jobs-statistik'); ?></a>
-                <span class="description" style="margin-left:0.5rem;"><?php echo esc_html__('Exportiert Übersicht, Fluktuation, Vakanzen, Fachbereiche und PLZ in eine Datei mit getrennten Tabellenblättern.', 'bs-awo-jobs-statistik'); ?></span>
+                <a href="<?php echo esc_url(wp_nonce_url(add_query_arg(['bs_export' => 'pdf'], admin_url('admin.php?page=' . self::PAGE_DASHBOARD)), 'bs_awo_export_pdf')); ?>" class="button"><?php echo esc_html__('Als PDF exportieren', 'bs-awo-jobs-statistik'); ?></a>
+                <span class="description" style="margin-left:0.5rem;"><?php echo esc_html__('Excel: Übersicht, Fluktuation, Vakanzen, Fachbereiche, PLZ. PDF: Kennzahlen, Diagramme und Tabellen.', 'bs-awo-jobs-statistik'); ?></span>
             </p>
 
             <nav class="nav-tab-wrapper wp-clearfix" style="margin-bottom:0;">
@@ -400,12 +401,16 @@ final class AdminPage
         $this->maybeHandleImport();
         $this->maybeHandleApiSync();
         ?>
-        <div class="wrap">
+        <div class="wrap" style="position:relative;">
+            <div id="bs-awo-import-overlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.85);z-index:100000;align-items:center;justify-content:center;flex-direction:column;display:none;">
+                <span class="spinner is-active" style="float:none;margin:0 0 1rem;display:block;width:40px;height:40px;"></span>
+                <p style="font-size:1.1rem;margin:0;"><?php echo esc_html__('Import wird ausgeführt, bitte warten…', 'bs-awo-jobs-statistik'); ?></p>
+            </div>
             <h1><?php echo esc_html__('Import', 'bs-awo-jobs-statistik'); ?></h1>
 
             <div class="card" style="max-width:600px;padding:1.5rem;margin:1rem 0;">
                 <h2><?php echo esc_html__('Excel/CSV-Upload', 'bs-awo-jobs-statistik'); ?></h2>
-                <form method="post" enctype="multipart/form-data">
+                <form id="bs-awo-excel-import-form" method="post" enctype="multipart/form-data">
                     <?php wp_nonce_field('bs_awo_jobs_excel_import', 'bs_awo_excel_nonce'); ?>
                     <input type="hidden" name="bs_awo_action" value="excel_import">
                     <p><input type="file" name="excel_file" accept=".xlsx,.xls,.csv"></p>
@@ -416,13 +421,14 @@ final class AdminPage
             <div class="card" style="max-width:600px;padding:1.5rem;margin:1rem 0;">
                 <h2><?php echo esc_html__('API synchronisieren', 'bs-awo-jobs-statistik'); ?></h2>
                 <p><?php echo esc_html__('API abrufen, Stundenzahlen ergänzen und Snapshot schreiben.', 'bs-awo-jobs-statistik'); ?></p>
-                <form method="post">
+                <form id="bs-awo-api-sync-form" method="post">
                     <?php wp_nonce_field('bs_awo_jobs_api_sync', 'bs_awo_api_nonce'); ?>
                     <input type="hidden" name="bs_awo_action" value="api_sync">
                     <?php submit_button(__('API jetzt synchronisieren', 'bs-awo-jobs-statistik')); ?>
                 </form>
             </div>
         </div>
+        <style>#bs-awo-import-overlay.is-visible{display:flex!important;}</style>
         <?php
     }
 
@@ -508,7 +514,25 @@ final class AdminPage
 
             <p><?php echo esc_html__('Automatisch gruppiert nach Titel + Einrichtung. Manuell zuordnen oder trennen.', 'bs-awo-jobs-statistik'); ?></p>
 
-            <table class="widefat striped">
+            <div style="margin-bottom:1rem;display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+                <label>
+                    <?php echo esc_html__('Suchen', 'bs-awo-jobs-statistik'); ?>:
+                    <input type="search" id="bs-awo-logische-suche" placeholder="<?php echo esc_attr__('Titel, Einrichtung, Stellennummer…', 'bs-awo-jobs-statistik'); ?>" style="width:220px;margin-left:0.25rem;">
+                </label>
+                <label>
+                    <?php echo esc_html__('Filter', 'bs-awo-jobs-statistik'); ?>:
+                    <select id="bs-awo-logische-filter" style="margin-left:0.25rem;">
+                        <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                        <option value="online"><?php echo esc_html__('Nur Online', 'bs-awo-jobs-statistik'); ?></option>
+                        <option value="offline"><?php echo esc_html__('Nur Offline', 'bs-awo-jobs-statistik'); ?></option>
+                        <option value="verifiziert"><?php echo esc_html__('Nur verifiziert', 'bs-awo-jobs-statistik'); ?></option>
+                        <option value="automatisch"><?php echo esc_html__('Nur automatisch', 'bs-awo-jobs-statistik'); ?></option>
+                    </select>
+                </label>
+                <span id="bs-awo-logische-treffer" class="description" style="margin-left:0.5rem;"></span>
+            </div>
+
+            <table class="widefat striped" id="bs-awo-logische-tabelle">
                 <thead>
                 <tr>
                     <th><?php echo esc_html__('ID', 'bs-awo-jobs-statistik'); ?></th>
@@ -526,8 +550,9 @@ final class AdminPage
                     $verifiziert = !empty($r['manuell_verifiziert']);
                     $online = !empty($r['hat_online']);
                     $rowStyle = $online ? '' : 'background:#f0f0f1;';
+                    $searchText = strtolower(implode(' ', [($r['titel'] ?? ''), ($r['einrichtung'] ?? ''), ($r['stellennummern'] ?? '')]));
                     ?>
-                    <tr style="<?php echo esc_attr($rowStyle); ?>">
+                    <tr class="bs-awo-logische-row" style="<?php echo esc_attr($rowStyle); ?>" data-online="<?php echo $online ? '1' : '0'; ?>" data-verifiziert="<?php echo $verifiziert ? '1' : '0'; ?>" data-search="<?php echo esc_attr($searchText); ?>">
                         <td><?php echo esc_html($r['id']); ?></td>
                         <td><?php echo esc_html($r['titel']); ?></td>
                         <td><?php echo esc_html($r['einrichtung']); ?></td>
