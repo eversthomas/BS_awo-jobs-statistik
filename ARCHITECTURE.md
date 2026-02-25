@@ -282,6 +282,10 @@ Der `vendor/`-Ordner wird **mit ins Repository committed**, damit das Plugin ohn
 | 5 | Analyse-Module: VZÄ, offene Stellen, Vakanzzeit, Fluktuation | Zahlen plausibel und nachvollziehbar |
 | 6 | Cronjob: täglicher API-Snapshot | Nach simuliertem Zeitablauf sind Snapshots in DB |
 | 7 | WordPress Admin-UI: Konfiguration, Import, Auswertungsdarstellung | Vollständig bedienbar ohne Code-Kenntnisse |
+| 8 | Charts im Dashboard (VZÄ-Verlauf, Fluktuation, Vakanzzeiten) | Diagramme laden, Daten stimmen mit Analyse-Modulen überein |
+| 9 | Excel-Export der statistischen Daten | Dashboard-Tabs als Excel-Dateien exportierbar |
+| 10 | PDF-Export (inkl. Charts) | PDF enthält Kennzahlen und eingebettete Diagramme |
+| 11 | UX-Verbesserungen | Fortschrittsanzeige beim Excel-Import, Filter/Suche in Logische Stellen |
 
 ---
 
