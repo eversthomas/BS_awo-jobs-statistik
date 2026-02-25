@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BS_Awo_Jobs_Statistik\Analysis;
 
 use BS_Awo_Jobs_Statistik\Core\Database;
+use BS_Awo_Jobs_Statistik\Core\StringNormalizer;
 
 final class VakanzAnalyzer
 {
@@ -174,8 +175,8 @@ final class VakanzAnalyzer
             ARRAY_A
         );
         foreach ($rows ?: [] as $r) {
-            $key = trim((string) ($r['fachbereich_boerse'] ?? '')) ?: '(leer)';
-            $nachFachbereich[$key] = (int) $r['cnt'];
+            $key = StringNormalizer::fachbereich($r['fachbereich_boerse'] ?? null);
+            $nachFachbereich[$key] = ($nachFachbereich[$key] ?? 0) + (int) $r['cnt'];
         }
 
         $nachPlz = [];

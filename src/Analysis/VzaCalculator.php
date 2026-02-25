@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BS_Awo_Jobs_Statistik\Analysis;
 
 use BS_Awo_Jobs_Statistik\Core\Database;
+use BS_Awo_Jobs_Statistik\Core\StringNormalizer;
 
 final class VzaCalculator
 {
@@ -59,8 +60,8 @@ final class VzaCalculator
                 continue;
             }
 
-            $fbBoerse = trim((string) ($row['fachbereich_boerse'] ?? '')) ?: '(leer)';
-            $fbIntern = trim((string) ($row['fachbereich_intern'] ?? '')) ?: '(leer)';
+            $fbBoerse = StringNormalizer::fachbereich($row['fachbereich_boerse'] ?? null);
+            $fbIntern = StringNormalizer::fachbereich($row['fachbereich_intern'] ?? null);
 
             $nachBoerse[$fbBoerse] = ($nachBoerse[$fbBoerse] ?? 0) + $vza;
             $nachIntern[$fbIntern] = ($nachIntern[$fbIntern] ?? 0) + $vza;
@@ -95,6 +96,55 @@ final class VzaCalculator
             }
         }
         return round($summe, 2);
+    }
+
+    /**
+     * VZÄ pro Einrichtung, gruppiert nach Fachbereich.
+     * Für Filter-Dropdown und Tabelle "VZÄ pro Einrichtung (gefiltert nach Fachbereich)".
+     *
+     * @return array{
+     *   boerse: array<string, array<string, float>> Fachbereich => [Einrichtung => VZÄ],
+     *   intern: array<string, array<string, float>>
+     * }
+     */
+    public function berechneVzaProEinrichtung(): array
+    {
+        $tbl = $this->db->prefix . Database::TABLE_AUSSCHREIBUNGEN;
+        $rows = $this->db->get_results(
+            "SELECT stunden, zeitmodell, fachbereich_boerse, fachbereich_intern, einrichtung
+             FROM {$tbl}
+             WHERE zuletzt_gesehen_api IS NOT NULL",
+            ARRAY_A
+        );
+
+        $boerse = [];
+        $intern = [];
+
+        foreach ($rows ?: [] as $row) {
+            $vza = $this->einzelVza(
+                $row['stunden'] !== null ? (float) $row['stunden'] : null,
+                (string) ($row['zeitmodell'] ?? '')
+            );
+            if ($vza === null) {
+                continue;
+            }
+
+            $fbBoerse = StringNormalizer::fachbereich($row['fachbereich_boerse'] ?? null);
+            $fbIntern = StringNormalizer::fachbereich($row['fachbereich_intern'] ?? null);
+            $einrichtung = trim((string) ($row['einrichtung'] ?? '')) ?: '(leer)';
+
+            $boerse[$fbBoerse][$einrichtung] = ($boerse[$fbBoerse][$einrichtung] ?? 0) + $vza;
+            $intern[$fbIntern][$einrichtung] = ($intern[$fbIntern][$einrichtung] ?? 0) + $vza;
+        }
+
+        foreach ($boerse as $fb => $eins) {
+            arsort($boerse[$fb]);
+        }
+        foreach ($intern as $fb => $eins) {
+            arsort($intern[$fb]);
+        }
+
+        return ['boerse' => $boerse, 'intern' => $intern];
     }
 
     /**

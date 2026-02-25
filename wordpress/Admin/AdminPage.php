@@ -138,6 +138,10 @@ final class AdminPage
                 $chartFlukData = array_column($top10, 'anzahl_ausschreibungen');
                 $chartVakanzLabels = array_map(static fn ($r) => $r['stellennummer'] . ' (' . mb_substr($r['titel'], 0, 25) . (mb_strlen($r['titel']) > 25 ? '…' : '') . ')', array_slice($offen, 0, 10));
                 $chartVakanzData = array_map(static fn ($r) => $r['tage_offen'], array_slice($offen, 0, 10));
+                $nachIntern = $aktuell['nach_intern'] ?? [];
+                arsort($nachIntern);
+                $chartFachbereichLabels = array_keys($nachIntern);
+                $chartFachbereichData = array_values($nachIntern);
                 ?>
                 <div class="bs-awo-charts" style="display:grid;grid-template-columns:1fr;gap:2rem;">
                     <div>
@@ -164,6 +168,13 @@ final class AdminPage
                             <canvas id="bs-awo-chart-vakanzen"></canvas>
                         </div>
                     </div>
+                    <div>
+                        <h3><?php echo esc_html__('Offene Stellen nach Fachbereich (Mandantenfeld)', 'bs-awo-jobs-statistik'); ?></h3>
+                        <p class="description"><?php echo esc_html__('VZÄ-Verteilung nach internem Kürzel / Mandantenfeld.', 'bs-awo-jobs-statistik'); ?></p>
+                        <div style="max-width:500px;height:350px;">
+                            <canvas id="bs-awo-chart-fachbereich"></canvas>
+                        </div>
+                    </div>
                 </div>
                 <?php
                 wp_localize_script('chartjs', 'bsAwoChartsData', [
@@ -173,8 +184,10 @@ final class AdminPage
                     'flukData' => array_map('intval', $chartFlukData),
                     'vakanzLabels' => $chartVakanzLabels,
                     'vakanzData' => array_map('intval', $chartVakanzData),
+                    'fachbereichLabels' => $chartFachbereichLabels,
+                    'fachbereichData' => array_map('floatval', $chartFachbereichData),
                 ]);
-                wp_add_inline_script('chartjs', "(function(){if(typeof Chart==='undefined')return;var d=window.bsAwoChartsData||{};var c1=document.getElementById('bs-awo-chart-vza');var c2=document.getElementById('bs-awo-chart-fluktuation');var c3=document.getElementById('bs-awo-chart-vakanzen');if(c1)new Chart(c1,{type:'line',data:{labels:d.vzaLabels||[],datasets:[{label:'VZÄ',data:d.vzaData||[],borderColor:'#2271b1',backgroundColor:'rgba(34,113,177,0.1)',fill:true,tension:0.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}});if(c2)new Chart(c2,{type:'bar',data:{labels:d.flukLabels||[],datasets:[{label:'Ausschreibungen',data:d.flukData||[],backgroundColor:'#00a32a'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{beginAtZero:true,ticks:{stepSize:1}}}}});if(c3)new Chart(c3,{type:'bar',data:{labels:d.vakanzLabels||[],datasets:[{label:'Tage offen',data:d.vakanzData||[],backgroundColor:'#d63638'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{beginAtZero:true,ticks:{stepSize:1}}}}});})();");
+                wp_add_inline_script('chartjs', "(function(){if(typeof Chart==='undefined')return;var d=window.bsAwoChartsData||{};var c1=document.getElementById('bs-awo-chart-vza');var c2=document.getElementById('bs-awo-chart-fluktuation');var c3=document.getElementById('bs-awo-chart-vakanzen');var c4=document.getElementById('bs-awo-chart-fachbereich');var pieColors=['#2271b1','#00a32a','#d63638','#dba617','#72aee6','#2c3338','#50575e','#787c82'];if(c1)new Chart(c1,{type:'line',data:{labels:d.vzaLabels||[],datasets:[{label:'VZÄ',data:d.vzaData||[],borderColor:'#2271b1',backgroundColor:'rgba(34,113,177,0.1)',fill:true,tension:0.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}});if(c2)new Chart(c2,{type:'bar',data:{labels:d.flukLabels||[],datasets:[{label:'Ausschreibungen',data:d.flukData||[],backgroundColor:'#00a32a'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{beginAtZero:true,ticks:{stepSize:1}}}}});if(c3)new Chart(c3,{type:'bar',data:{labels:d.vakanzLabels||[],datasets:[{label:'Tage offen',data:d.vakanzData||[],backgroundColor:'#d63638'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{beginAtZero:true,ticks:{stepSize:1}}}}});if(c4&&d.fachbereichLabels&&d.fachbereichLabels.length)new Chart(c4,{type:'pie',data:{labels:d.fachbereichLabels,datasets:[{data:d.fachbereichData||[],backgroundColor:pieColors,borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{tooltip:{callbacks:{label:function(ctx){return ctx.label+': '+ctx.raw.toFixed(2)+' VZÄ';}}}}}});})();");
                 ?>
             <?php endif; ?>
 
@@ -288,6 +301,56 @@ final class AdminPage
                     <?php endforeach; ?>
                     <?php if (empty($nachIntern)): ?>
                         <tr><td colspan="2"><?php echo esc_html__('Keine Daten.', 'bs-awo-jobs-statistik'); ?></td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+
+                <?php
+                $vzaProEinrichtung = $vza->berechneVzaProEinrichtung();
+                $fbSource = sanitize_key($_GET['bs_fb_source'] ?? 'boerse');
+                if ($fbSource !== 'boerse' && $fbSource !== 'intern') {
+                    $fbSource = 'boerse';
+                }
+                $fachbereicheList = $fbSource === 'boerse' ? array_keys($vzaProEinrichtung['boerse']) : array_keys($vzaProEinrichtung['intern']);
+                $selectedFb = isset($_GET['bs_fb']) ? sanitize_text_field(wp_unslash($_GET['bs_fb'])) : '';
+                if ($selectedFb !== '' && !in_array($selectedFb, $fachbereicheList, true)) {
+                    $selectedFb = $fachbereicheList[0] ?? '';
+                }
+                if ($selectedFb === '' && $fachbereicheList !== []) {
+                    $selectedFb = $fachbereicheList[0];
+                }
+                $einrichtungenRows = [];
+                if ($selectedFb !== '') {
+                    $einrichtungenRows = $vzaProEinrichtung[$fbSource][$selectedFb] ?? [];
+                }
+                ?>
+                <h2 style="margin-top:2rem;"><?php echo esc_html__('VZÄ pro Einrichtung (gefiltert nach Fachbereich)', 'bs-awo-jobs-statistik'); ?></h2>
+                <p class="description"><?php echo esc_html__('Wählen Sie einen Fachbereich, um die zugehörigen Einrichtungen mit ihren VZÄ anzuzeigen.', 'bs-awo-jobs-statistik'); ?></p>
+                <form method="get" style="margin-bottom:1.5rem;">
+                    <input type="hidden" name="page" value="<?php echo esc_attr(self::PAGE_DASHBOARD); ?>">
+                    <input type="hidden" name="bs_tab" value="fachbereiche">
+                    <label style="margin-right:1rem;"><?php echo esc_html__('Quelle', 'bs-awo-jobs-statistik'); ?>:
+                        <select name="bs_fb_source" onchange="this.form.submit()">
+                            <option value="boerse" <?php selected($fbSource, 'boerse'); ?>><?php echo esc_html__('Stellenbörse', 'bs-awo-jobs-statistik'); ?></option>
+                            <option value="intern" <?php selected($fbSource, 'intern'); ?>><?php echo esc_html__('Mandantenfeld (internes Kürzel)', 'bs-awo-jobs-statistik'); ?></option>
+                        </select>
+                    </label>
+                    <label><?php echo esc_html__('Fachbereich', 'bs-awo-jobs-statistik'); ?>:
+                        <select name="bs_fb" onchange="this.form.submit()">
+                            <?php foreach ($fachbereicheList as $fb): ?>
+                                <option value="<?php echo esc_attr($fb); ?>" <?php selected($selectedFb, $fb); ?>><?php echo esc_html($fb); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                </form>
+                <table class="widefat striped">
+                    <thead><tr><th><?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('VZÄ', 'bs-awo-jobs-statistik'); ?></th></tr></thead>
+                    <tbody>
+                    <?php foreach ($einrichtungenRows as $einr => $vzaVal): ?>
+                        <tr><td><?php echo esc_html($einr); ?></td><td><?php echo esc_html(number_format($vzaVal, 2, ',', '.')); ?></td></tr>
+                    <?php endforeach; ?>
+                    <?php if (empty($einrichtungenRows)): ?>
+                        <tr><td colspan="2"><?php echo esc_html__('Keinen Fachbereich gewählt oder keine Einrichtungen.', 'bs-awo-jobs-statistik'); ?></td></tr>
                     <?php endif; ?>
                     </tbody>
                 </table>
