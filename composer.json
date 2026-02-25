@@ -8,7 +8,8 @@
     },
     "autoload": {
         "psr-4": {
-            "BS_Awo_Jobs_Statistik\\": "src/"
+            "BS_Awo_Jobs_Statistik\\": "src/",
+            "BS_Awo_Jobs_Statistik\\WordPress\\": "wordpress/"
         }
     }
 }

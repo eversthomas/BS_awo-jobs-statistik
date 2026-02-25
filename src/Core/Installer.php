@@ -26,6 +26,8 @@ final class Installer
         }
 
         self::seedKonfiguration($wpdb);
+
+        \BS_Awo_Jobs_Statistik\WordPress\Cron\CronHandler::schedule();
     }
 
     /**

@@ -196,6 +196,18 @@ Key-Value-Store für installationsspezifische Einstellungen.
 
 ---
 
+## Cron-Zuverlässigkeit
+
+Der Snapshot-Cronjob nutzt **WordPress Cron** (`wp_schedule_event`), der bei Seitenaufrufen ausgelöst wird. Bei wenig Traffic kann der Cron ggf. nicht täglich laufen.
+
+**Optional – Echter System-Cron (nachrüstbar):**
+- `DISABLE_WP_CRON` in `wp-config.php` setzen (falls gewünscht)
+- System-Cron einrichten, z.B. alle 15 Min.:  
+  `*/15 * * * * curl -s "https://deine-domain.de/wp-cron.php?doing_wp_cron" >/dev/null 2>&1`
+- Dadurch wird der Snapshot zuverlässig zum geplanten Zeitpunkt ausgeführt
+
+---
+
 ## Deinstallationsverhalten
 
 - **Deaktivieren** des Plugins: Keine Datenlöschung, alle Daten bleiben erhalten.

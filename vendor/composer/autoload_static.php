@@ -31,6 +31,7 @@ class ComposerStaticInit9aaa3932fe7f34ca5fd929351c6f35f5
         ),
         'B' =>
         array (
+            'BS_Awo_Jobs_Statistik\\WordPress\\' => 32,
             'BS_Awo_Jobs_Statistik\\' => 22,
         ),
     );
@@ -59,6 +60,10 @@ class ComposerStaticInit9aaa3932fe7f34ca5fd929351c6f35f5
         'Complex\\' =>
         array (
             0 => __DIR__ . '/..' . '/markbaker/complex/classes/src',
+        ),
+        'BS_Awo_Jobs_Statistik\\WordPress\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/wordpress',
         ),
         'BS_Awo_Jobs_Statistik\\' =>
         array (

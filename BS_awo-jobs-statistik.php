@@ -31,3 +31,6 @@ require_once __DIR__ . '/src/Core/Database.php';
 require_once __DIR__ . '/src/Core/Installer.php';
 
 \register_activation_hook(__FILE__, [\BS_Awo_Jobs_Statistik\Core\Installer::class, 'activate']);
+\register_deactivation_hook(__FILE__, [\BS_Awo_Jobs_Statistik\WordPress\Cron\CronHandler::class, 'unschedule']);
+
+\add_action(\BS_Awo_Jobs_Statistik\WordPress\Cron\CronHandler::HOOK, [\BS_Awo_Jobs_Statistik\WordPress\Cron\CronHandler::class, 'run']);

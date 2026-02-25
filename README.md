@@ -16,15 +16,15 @@ Fortschritt orientiert sich am Entwicklungsfahrplan in ARCHITECTURE.md. Detailli
 | 2 | Excel/CSV-Import | ✅ erledigt |
 | 3 | API-Import + Stunden-Extraktion + Zusammenführung | ✅ erledigt |
 | 4 | Deduplizierung / Logische Stellen (Auto + manuelle Korrektur) | ✅ erledigt |
-| **5** | **Analyse-Module (VZÄ, Fluktuation, Vakanz)** | ⏳ **als nächstes** |
-| 6 | Cronjob: täglicher API-Snapshot | ⏳ ausstehend |
-| 7 | WordPress Admin-UI (Dashboard, Import, Logische Stellen, Einstellungen) | ⏳ ausstehend |
+| 5 | Analyse-Module (VZÄ, Fluktuation, Vakanz) | ✅ erledigt |
+| 6 | Cronjob: täglicher API-Snapshot | ✅ erledigt |
+| **7** | **WordPress Admin-UI** (Dashboard, Import, Logische Stellen, Einstellungen) | ⏳ **als nächstes** |
 
 ### Wo weitermachen?
 
-- **Nächster Schritt:** **Schritt 5 – Analyse-Module.**  
-  Vollständige Beschreibung in **`.prompts2do`** (ab „Schritt 5: Analyse-Module“): VzaCalculator, FluktuationAnalyzer, VakanzAnalyzer mit den dort genannten Methoden und Testkriterien.
-- Danach: Schritt 6 (SnapshotService + CronHandler), dann Schritt 7 (Admin-UI).
+- **Nächster Schritt:** **Schritt 7 – WordPress Admin-UI.**  
+  Vollständige Beschreibung in **`.prompts2do`** (ab „Schritt 7: WordPress Admin-UI“).
+- **Tests:** `test-analysis.php` (Analyse), `test-snapshot.php` (Snapshot manuell ausführen).
 
 ---
 
