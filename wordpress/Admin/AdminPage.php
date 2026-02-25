@@ -59,58 +59,214 @@ final class AdminPage
 
         $fluk = new FluktuationAnalyzer($this->wpdb);
         $top10 = $fluk->haeufigsteStellen(10);
+        $idsTop10 = array_column($top10, 'logische_stelle_id');
+        $stellennummernByLog = $fluk->getStellennummernOnlineZuerst($idsTop10);
+        $plzByLog = $fluk->getPlzFuerLogischeStellen($idsTop10);
 
         $vakanz = new VakanzAnalyzer($this->wpdb);
         $offen = $vakanz->offenSeit();
-        $offenTop = array_slice($offen, 0, 5);
+        $offenTop = array_slice($offen, 0, 10);
+        $plzStats = $vakanz->nachPlz();
+        $uebersichtCounts = $vakanz->getUebersichtCounts();
+
+        $activeTab = sanitize_key($_GET['bs_tab'] ?? 'uebersicht');
+        $tabs = ['uebersicht', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz'];
+        if (!in_array($activeTab, $tabs, true)) {
+            $activeTab = 'uebersicht';
+        }
         ?>
         <div class="wrap">
             <h1><?php echo esc_html__('Dashboard', 'bs-awo-jobs-statistik'); ?></h1>
 
-            <div class="bs-awo-stats-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin:1.5rem 0;">
-                <div class="card" style="padding:1rem;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1);border-left:4px solid #2271b1;">
-                    <strong><?php echo esc_html__('Offene Stellen', 'bs-awo-jobs-statistik'); ?></strong>
-                    <div style="font-size:1.75rem;margin-top:.5rem;"><?php echo esc_html((string) count($offen)); ?></div>
-                </div>
-                <div class="card" style="padding:1rem;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1);border-left:4px solid #00a32a;">
-                    <strong><?php echo esc_html__('Gesamt-VZÄ', 'bs-awo-jobs-statistik'); ?></strong>
-                    <div style="font-size:1.75rem;margin-top:.5rem;"><?php echo esc_html(number_format($gesamt, 2, ',', '.')); ?></div>
-                </div>
-                <div class="card" style="padding:1rem;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1);border-left:4px solid #d63638;">
-                    <strong><?php echo esc_html__('Unbekannt (Teilzeit)', 'bs-awo-jobs-statistik'); ?></strong>
-                    <div style="font-size:1.75rem;margin-top:.5rem;"><?php echo esc_html((string) ($aktuell['unbekannt_anzahl'] ?? 0)); ?></div>
-                </div>
-            </div>
+            <nav class="nav-tab-wrapper wp-clearfix" style="margin-bottom:0;">
+                <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=uebersicht" class="nav-tab <?php echo $activeTab === 'uebersicht' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Übersicht', 'bs-awo-jobs-statistik'); ?></a>
+                <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=fluktuation" class="nav-tab <?php echo $activeTab === 'fluktuation' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Fluktuation', 'bs-awo-jobs-statistik'); ?></a>
+                <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=vakanzen" class="nav-tab <?php echo $activeTab === 'vakanzen' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Vakanzen', 'bs-awo-jobs-statistik'); ?></a>
+                <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=fachbereiche" class="nav-tab <?php echo $activeTab === 'fachbereiche' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Fachbereiche', 'bs-awo-jobs-statistik'); ?></a>
+                <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=plz" class="nav-tab <?php echo $activeTab === 'plz' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('PLZ', 'bs-awo-jobs-statistik'); ?></a>
+            </nav>
 
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
-                <div class="card" style="padding:1rem;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1);">
-                    <h2><?php echo esc_html__('Top 10 Fluktuationsstellen', 'bs-awo-jobs-statistik'); ?></h2>
-                    <table class="widefat striped">
-                        <thead><tr><th>#</th><th><?php echo esc_html__('Titel', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Anzahl', 'bs-awo-jobs-statistik'); ?></th></tr></thead>
-                        <tbody>
-                        <?php foreach ($top10 as $i => $row): ?>
-                            <tr><td><?php echo $i + 1; ?></td><td><?php echo esc_html($row['titel']); ?></td><td><?php echo esc_html($row['einrichtung']); ?></td><td><?php echo esc_html((string) $row['anzahl_ausschreibungen']); ?></td></tr>
+            <div class="bs-awo-tab-content" style="background:#fff;padding:1.5rem;box-shadow:0 1px 3px rgba(0,0,0,.1);margin-top:-1px;border:1px solid #c3c4c7;border-top:none;">
+
+            <?php if ($activeTab === 'uebersicht'): ?>
+                <div class="bs-awo-stats-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin-bottom:2rem;">
+                    <div class="card" style="padding:1rem;border-left:4px solid #2271b1;">
+                        <strong><?php echo esc_html__('Offene Stellen', 'bs-awo-jobs-statistik'); ?></strong>
+                        <div style="font-size:1.75rem;margin-top:.5rem;"><?php echo esc_html((string) count($offen)); ?></div>
+                    </div>
+                    <div class="card" style="padding:1rem;border-left:4px solid #00a32a;">
+                        <strong><?php echo esc_html__('Gesamt-VZÄ', 'bs-awo-jobs-statistik'); ?></strong>
+                        <div style="font-size:1.75rem;margin-top:.5rem;"><?php echo esc_html(number_format($gesamt, 2, ',', '.')); ?></div>
+                    </div>
+                    <div class="card" style="padding:1rem;border-left:4px solid #d63638;">
+                        <strong><?php echo esc_html__('Unbekannt (Teilzeit)', 'bs-awo-jobs-statistik'); ?></strong>
+                        <div style="font-size:1.75rem;margin-top:.5rem;"><?php echo esc_html((string) ($aktuell['unbekannt_anzahl'] ?? 0)); ?></div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.5rem;">
+                    <div><h3><?php echo esc_html__('Nach Stellentitel', 'bs-awo-jobs-statistik'); ?></h3>
+                        <table class="widefat striped"><thead><tr><th><?php echo esc_html__('Titel', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Anzahl', 'bs-awo-jobs-statistik'); ?></th></tr></thead><tbody>
+                        <?php foreach ($uebersichtCounts['nach_titel'] as $titel => $cnt): ?>
+                            <tr><td><?php echo esc_html($titel); ?></td><td><?php echo esc_html((string) $cnt); ?></td></tr>
                         <?php endforeach; ?>
-                        <?php if (empty($top10)): ?>
-                            <tr><td colspan="4"><?php echo esc_html__('Keine Daten.', 'bs-awo-jobs-statistik'); ?></td></tr>
-                        <?php endif; ?>
+                        <?php if (empty($uebersichtCounts['nach_titel'])): ?><tr><td colspan="2"><?php echo esc_html__('Keine Daten.', 'bs-awo-jobs-statistik'); ?></td></tr><?php endif; ?>
+                        </tbody></table></div>
+                    <div><h3><?php echo esc_html__('Nach Fachbereich', 'bs-awo-jobs-statistik'); ?></h3>
+                        <table class="widefat striped"><thead><tr><th><?php echo esc_html__('Fachbereich', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Anzahl', 'bs-awo-jobs-statistik'); ?></th></tr></thead><tbody>
+                        <?php foreach ($uebersichtCounts['nach_fachbereich'] as $fb => $cnt): ?>
+                            <tr><td><?php echo esc_html($fb); ?></td><td><?php echo esc_html((string) $cnt); ?></td></tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($uebersichtCounts['nach_fachbereich'])): ?><tr><td colspan="2"><?php echo esc_html__('Keine Daten.', 'bs-awo-jobs-statistik'); ?></td></tr><?php endif; ?>
+                        </tbody></table></div>
+                    <div><h3><?php echo esc_html__('Nach Postleitzahl', 'bs-awo-jobs-statistik'); ?></h3>
+                        <table class="widefat striped"><thead><tr><th><?php echo esc_html__('PLZ', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Anzahl', 'bs-awo-jobs-statistik'); ?></th></tr></thead><tbody>
+                        <?php foreach ($uebersichtCounts['nach_plz'] as $plz => $cnt): ?>
+                            <tr><td><code><?php echo esc_html($plz); ?></code></td><td><?php echo esc_html((string) $cnt); ?></td></tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($uebersichtCounts['nach_plz'])): ?><tr><td colspan="2"><?php echo esc_html__('Keine Daten.', 'bs-awo-jobs-statistik'); ?></td></tr><?php endif; ?>
+                        </tbody></table></div>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($activeTab === 'fluktuation'): ?>
+                <h2><?php echo esc_html__('Top 10 Fluktuationsstellen', 'bs-awo-jobs-statistik'); ?></h2>
+                <p class="description"><?php echo esc_html__('Logische Stellen mit den meisten Ausschreibungen. Stellennummern: online zuerst, dann offline (jeweils neueste zuerst).', 'bs-awo-jobs-statistik'); ?></p>
+                <table class="widefat striped">
+                    <thead><tr><th>#</th><th><?php echo esc_html__('Titel', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('PLZ', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Ausschreibungen', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Stellennummern', 'bs-awo-jobs-statistik'); ?></th></tr></thead>
+                    <tbody>
+                    <?php foreach ($top10 as $i => $row):
+                        $sns = $stellennummernByLog[$row['logische_stelle_id']] ?? [];
+                        $snPreview = implode(', ', array_slice($sns, 0, 3)) . (count($sns) > 3 ? ' …' : '');
+                        $plzStr = $plzByLog[$row['logische_stelle_id']] ?? '';
+                    ?>
+                        <tr>
+                            <td><?php echo $i + 1; ?></td>
+                            <td><?php echo esc_html($row['titel']); ?></td>
+                            <td><?php echo esc_html($row['einrichtung']); ?></td>
+                            <td><code><?php echo esc_html($plzStr ?: '–'); ?></code></td>
+                            <td><?php echo esc_html((string) $row['anzahl_ausschreibungen']); ?></td>
+                            <td><code style="font-size:11px;"><?php echo esc_html($snPreview ?: '–'); ?></code></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php if (empty($top10)): ?>
+                        <tr><td colspan="6"><?php echo esc_html__('Keine Daten.', 'bs-awo-jobs-statistik'); ?></td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+                <?php if (!empty($top10)): ?>
+                <details style="margin-top:1.5rem;">
+                    <summary style="cursor:pointer;font-weight:600;"><?php echo esc_html__('Alle Stellennummern anzeigen', 'bs-awo-jobs-statistik'); ?></summary>
+                    <table class="widefat striped" style="margin-top:0.5rem;">
+                        <thead><tr><th>#</th><th><?php echo esc_html__('Titel', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('PLZ', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Ausschreibungen', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Stellennummern', 'bs-awo-jobs-statistik'); ?></th></tr></thead>
+                        <tbody>
+                        <?php foreach ($top10 as $i => $row):
+                            $sns = $stellennummernByLog[$row['logische_stelle_id']] ?? [];
+                            $plzStr = $plzByLog[$row['logische_stelle_id']] ?? '';
+                        ?>
+                            <tr>
+                                <td><?php echo $i + 1; ?></td>
+                                <td><?php echo esc_html($row['titel']); ?></td>
+                                <td><?php echo esc_html($row['einrichtung']); ?></td>
+                                <td><code><?php echo esc_html($plzStr ?: '–'); ?></code></td>
+                                <td><?php echo esc_html((string) $row['anzahl_ausschreibungen']); ?></td>
+                                <td><code><?php echo esc_html(implode(', ', $sns)); ?></code></td>
+                            </tr>
+                        <?php endforeach; ?>
                         </tbody>
                     </table>
-                </div>
-                <div class="card" style="padding:1rem;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1);">
-                    <h2><?php echo esc_html__('Längste offene Vakanzen', 'bs-awo-jobs-statistik'); ?></h2>
-                    <table class="widefat striped">
-                        <thead><tr><th><?php echo esc_html__('Stellennr.', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Tage', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Titel', 'bs-awo-jobs-statistik'); ?></th></tr></thead>
-                        <tbody>
-                        <?php foreach ($offenTop as $row): ?>
-                            <tr><td><?php echo esc_html($row['stellennummer']); ?></td><td><?php echo esc_html((string) $row['tage_offen']); ?></td><td><?php echo esc_html($row['titel']); ?></td></tr>
-                        <?php endforeach; ?>
-                        <?php if (empty($offenTop)): ?>
-                            <tr><td colspan="3"><?php echo esc_html__('Keine offenen Stellen.', 'bs-awo-jobs-statistik'); ?></td></tr>
-                        <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
+                </details>
+                <?php endif; ?>
+            <?php endif; ?>
+
+            <?php if ($activeTab === 'vakanzen'): ?>
+                <h2><?php echo esc_html__('Offene Vakanzen', 'bs-awo-jobs-statistik'); ?></h2>
+                <table class="widefat striped">
+                    <thead><tr><th><?php echo esc_html__('Stellennr.', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Tage', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Titel', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Ort', 'bs-awo-jobs-statistik'); ?></th></tr></thead>
+                    <tbody>
+                    <?php foreach ($offenTop as $row): ?>
+                        <tr>
+                            <td><code><?php echo esc_html($row['stellennummer']); ?></code></td>
+                            <td><?php echo esc_html((string) $row['tage_offen']); ?></td>
+                            <td><?php echo esc_html($row['titel']); ?></td>
+                            <td><?php echo esc_html($row['einrichtung']); ?></td>
+                            <td><?php echo esc_html(trim(($row['plz_einsatzort'] ?? '') . ' ' . ($row['einsatzort'] ?? '')) ?: '–'); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php if (count($offen) > 10): foreach (array_slice($offen, 10) as $row): ?>
+                        <tr>
+                            <td><code><?php echo esc_html($row['stellennummer']); ?></code></td>
+                            <td><?php echo esc_html((string) $row['tage_offen']); ?></td>
+                            <td><?php echo esc_html($row['titel']); ?></td>
+                            <td><?php echo esc_html($row['einrichtung']); ?></td>
+                            <td><?php echo esc_html(trim(($row['plz_einsatzort'] ?? '') . ' ' . ($row['einsatzort'] ?? '')) ?: '–'); ?></td>
+                        </tr>
+                    <?php endforeach; endif; ?>
+                    <?php if (empty($offen)): ?>
+                        <tr><td colspan="5"><?php echo esc_html__('Keine offenen Stellen.', 'bs-awo-jobs-statistik'); ?></td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+
+            <?php if ($activeTab === 'fachbereiche'): ?>
+                <h2><?php echo esc_html__('VZÄ nach Fachbereich (Stellenbörse)', 'bs-awo-jobs-statistik'); ?></h2>
+                <p class="description"><?php echo esc_html__('Aktuell offene Stellen gruppiert nach Fachbereich der Stellenbörse.', 'bs-awo-jobs-statistik'); ?></p>
+                <table class="widefat striped">
+                    <thead><tr><th><?php echo esc_html__('Fachbereich', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('VZÄ', 'bs-awo-jobs-statistik'); ?></th></tr></thead>
+                    <tbody>
+                    <?php
+                    $nachBoerse = $aktuell['nach_boerse'] ?? [];
+                    arsort($nachBoerse);
+                    foreach ($nachBoerse as $fb => $vzaVal): ?>
+                        <tr><td><?php echo esc_html($fb); ?></td><td><?php echo esc_html(number_format($vzaVal, 2, ',', '.')); ?></td></tr>
+                    <?php endforeach; ?>
+                    <?php if (empty($nachBoerse)): ?>
+                        <tr><td colspan="2"><?php echo esc_html__('Keine Daten.', 'bs-awo-jobs-statistik'); ?></td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+                <h2 style="margin-top:2rem;"><?php echo esc_html__('VZÄ nach Mandantenfeld (internes Kürzel)', 'bs-awo-jobs-statistik'); ?></h2>
+                <p class="description"><?php echo esc_html__('Aktuell offene Stellen gruppiert nach internem Kürzel / Mandantenfeld.', 'bs-awo-jobs-statistik'); ?></p>
+                <table class="widefat striped">
+                    <thead><tr><th><?php echo esc_html__('Mandantenfeld', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('VZÄ', 'bs-awo-jobs-statistik'); ?></th></tr></thead>
+                    <tbody>
+                    <?php
+                    $nachIntern = $aktuell['nach_intern'] ?? [];
+                    arsort($nachIntern);
+                    foreach ($nachIntern as $fb => $vzaVal): ?>
+                        <tr><td><?php echo esc_html($fb); ?></td><td><?php echo esc_html(number_format($vzaVal, 2, ',', '.')); ?></td></tr>
+                    <?php endforeach; ?>
+                    <?php if (empty($nachIntern)): ?>
+                        <tr><td colspan="2"><?php echo esc_html__('Keine Daten.', 'bs-awo-jobs-statistik'); ?></td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+
+            <?php if ($activeTab === 'plz'): ?>
+                <h2><?php echo esc_html__('Statistik nach Postleitzahl', 'bs-awo-jobs-statistik'); ?></h2>
+                <p class="description"><?php echo esc_html__('Aktuell offene Stellen nach PLZ. Stellennummern und Stellentitel zur gezielten Suche.', 'bs-awo-jobs-statistik'); ?></p>
+                <?php if (!empty($plzStats)): ?>
+                <table class="widefat striped">
+                    <thead><tr><th><?php echo esc_html__('PLZ', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Ort', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Anzahl', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('VZÄ', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Stellennummern', 'bs-awo-jobs-statistik'); ?></th><th><?php echo esc_html__('Stellentitel', 'bs-awo-jobs-statistik'); ?></th></tr></thead>
+                    <tbody>
+                    <?php foreach ($plzStats as $r): ?>
+                        <tr>
+                            <td><code><?php echo esc_html($r['plz']); ?></code></td>
+                            <td><?php echo esc_html($r['einsatzort'] ?? '–'); ?></td>
+                            <td><?php echo esc_html((string) $r['anzahl']); ?></td>
+                            <td><?php echo esc_html(number_format($r['vza_summe'], 2, ',', '.')); ?></td>
+                            <td><code style="font-size:11px;"><?php echo esc_html($r['stellennummern'] ?? ''); ?></code></td>
+                            <td style="font-size:11px;"><?php echo esc_html($r['titel_liste'] ?? ''); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php else: ?>
+                <p><?php echo esc_html__('Keine Stellen mit erfasster Postleitzahl.', 'bs-awo-jobs-statistik'); ?></p>
+                <?php endif; ?>
+            <?php endif; ?>
+
             </div>
         </div>
         <?php
@@ -214,10 +370,11 @@ final class AdminPage
 
         $rows = $this->wpdb->get_results(
             "SELECT l.id, l.titel, l.einrichtung, l.manuell_verifiziert,
-                    (SELECT GROUP_CONCAT(z.stellennummer ORDER BY z.stellennummer) FROM {$tblZ} z WHERE z.logische_stelle_id = l.id) AS stellennummern
+                    (SELECT GROUP_CONCAT(z.stellennummer ORDER BY z.stellennummer) FROM {$tblZ} z WHERE z.logische_stelle_id = l.id) AS stellennummern,
+                    (SELECT COUNT(*) FROM {$tblZ} z2 JOIN {$tblA} a ON a.stellennummer = z2.stellennummer WHERE z2.logische_stelle_id = l.id AND a.zuletzt_gesehen_api IS NOT NULL) > 0 AS hat_online
              FROM {$tblL} l
-             ORDER BY l.id
-             LIMIT 200",
+             ORDER BY hat_online DESC, l.id
+             LIMIT 500",
             ARRAY_A
         );
 
@@ -234,7 +391,8 @@ final class AdminPage
                     <th><?php echo esc_html__('ID', 'bs-awo-jobs-statistik'); ?></th>
                     <th><?php echo esc_html__('Titel', 'bs-awo-jobs-statistik'); ?></th>
                     <th><?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?></th>
-                    <th><?php echo esc_html__('Status', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Aktuell', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Zuordnung', 'bs-awo-jobs-statistik'); ?></th>
                     <th><?php echo esc_html__('Stellennummern', 'bs-awo-jobs-statistik'); ?></th>
                     <th><?php echo esc_html__('Aktionen', 'bs-awo-jobs-statistik'); ?></th>
                 </tr>
@@ -243,12 +401,19 @@ final class AdminPage
                 <?php foreach ($rows ?: [] as $r):
                     $sns = $r['stellennummern'] ? explode(',', $r['stellennummern']) : [];
                     $verifiziert = !empty($r['manuell_verifiziert']);
+                    $online = !empty($r['hat_online']);
+                    $rowStyle = $online ? '' : 'background:#f0f0f1;';
                     ?>
-                    <tr>
+                    <tr style="<?php echo esc_attr($rowStyle); ?>">
                         <td><?php echo esc_html($r['id']); ?></td>
                         <td><?php echo esc_html($r['titel']); ?></td>
                         <td><?php echo esc_html($r['einrichtung']); ?></td>
-                        <td><span class="badge" style="background:<?php echo $verifiziert ? '#00a32a' : '#dba617'; ?>;color:#fff;padding:2px 8px;border-radius:3px;"><?php echo $verifiziert ? esc_html__('verifiziert', 'bs-awo-jobs-statistik') : esc_html__('automatisch', 'bs-awo-jobs-statistik'); ?></span></td>
+                        <td>
+                            <span class="badge" style="background:<?php echo $online ? '#00a32a' : '#8c8f94'; ?>;color:#fff;padding:2px 8px;border-radius:3px;" title="<?php echo $online ? esc_attr__('Mindestens eine Ausschreibung ist aktuell online', 'bs-awo-jobs-statistik') : esc_attr__('Alle Ausschreibungen dieser logischen Stelle sind offline', 'bs-awo-jobs-statistik'); ?>">
+                                <?php echo $online ? esc_html__('Online', 'bs-awo-jobs-statistik') : esc_html__('Offline', 'bs-awo-jobs-statistik'); ?>
+                            </span>
+                        </td>
+                        <td><span class="badge" style="background:<?php echo $verifiziert ? '#2271b1' : '#dba617'; ?>;color:#fff;padding:2px 8px;border-radius:3px;"><?php echo $verifiziert ? esc_html__('verifiziert', 'bs-awo-jobs-statistik') : esc_html__('automatisch', 'bs-awo-jobs-statistik'); ?></span></td>
                         <td><code><?php echo esc_html(implode(', ', array_slice($sns, 0, 5)) . (count($sns) > 5 ? ' …' : '')); ?></code></td>
                         <td>
                             <?php foreach (array_slice($sns, 0, 3) as $sn): ?>
@@ -266,7 +431,7 @@ final class AdminPage
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($rows)): ?>
-                    <tr><td colspan="6"><?php echo esc_html__('Keine logischen Stellen.', 'bs-awo-jobs-statistik'); ?></td></tr>
+                    <tr><td colspan="7"><?php echo esc_html__('Keine logischen Stellen.', 'bs-awo-jobs-statistik'); ?></td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

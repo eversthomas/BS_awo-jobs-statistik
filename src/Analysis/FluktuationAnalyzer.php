@@ -87,7 +87,7 @@ final class FluktuationAnalyzer
     /**
      * Top-N logische Stellen nach Ausschreibungshäufigkeit.
      *
-     * @return array<int, array{logische_stelle_id: int, titel: string, einrichtung: string, anzahl: int}>
+     * @return array<int, array{logische_stelle_id: int, titel: string, einrichtung: string, anzahl_ausschreibungen: int, ...}>
      */
     public function haeufigsteStellen(int $limit = 10): array
     {
@@ -96,5 +96,108 @@ final class FluktuationAnalyzer
             return $b['anzahl_ausschreibungen'] <=> $a['anzahl_ausschreibungen'];
         });
         return array_slice(array_values($data), 0, $limit);
+    }
+
+    /**
+     * Stellennummern je logischer Stelle.
+     *
+     * @param list<int> $logischeStelleIds
+     * @return array<int, list<string>>
+     */
+    public function getStellennummernFuerLogischeStellen(array $logischeStelleIds): array
+    {
+        if (empty($logischeStelleIds)) {
+            return [];
+        }
+        $tblZ = $this->db->prefix . Database::TABLE_ZUORDNUNGEN;
+        $placeholders = implode(',', array_fill(0, count($logischeStelleIds), '%d'));
+        $rows = $this->db->get_results(
+            $this->db->prepare(
+                "SELECT logische_stelle_id, stellennummer FROM {$tblZ} WHERE logische_stelle_id IN ({$placeholders}) ORDER BY logische_stelle_id, stellennummer DESC",
+                ...$logischeStelleIds
+            ),
+            ARRAY_A
+        );
+        $result = [];
+        foreach ($logischeStelleIds as $id) {
+            $result[$id] = [];
+        }
+        foreach ($rows ?: [] as $r) {
+            $id = (int) $r['logische_stelle_id'];
+            $result[$id][] = (string) $r['stellennummer'];
+        }
+        return $result;
+    }
+
+    /**
+     * Stellennummern je logischer Stelle: zuerst online (zuletzt_gesehen_api), dann offline.
+     *
+     * @param list<int> $logischeStelleIds
+     * @return array<int, list<string>> Konkatenation: [online..., offline...]
+     */
+    public function getStellennummernOnlineZuerst(array $logischeStelleIds): array
+    {
+        if (empty($logischeStelleIds)) {
+            return [];
+        }
+        $tblZ = $this->db->prefix . Database::TABLE_ZUORDNUNGEN;
+        $tblA = $this->db->prefix . Database::TABLE_AUSSCHREIBUNGEN;
+        $placeholders = implode(',', array_fill(0, count($logischeStelleIds), '%d'));
+        $rows = $this->db->get_results(
+            $this->db->prepare(
+                "SELECT z.logische_stelle_id, z.stellennummer, (a.zuletzt_gesehen_api IS NOT NULL) AS is_online
+                 FROM {$tblZ} z
+                 JOIN {$tblA} a ON a.stellennummer = z.stellennummer
+                 WHERE z.logische_stelle_id IN ({$placeholders})
+                 ORDER BY z.logische_stelle_id, is_online DESC, z.stellennummer DESC",
+                ...$logischeStelleIds
+            ),
+            ARRAY_A
+        );
+        $result = [];
+        foreach ($logischeStelleIds as $id) {
+            $result[$id] = [];
+        }
+        foreach ($rows ?: [] as $r) {
+            $id = (int) $r['logische_stelle_id'];
+            $result[$id][] = (string) $r['stellennummer'];
+        }
+        return $result;
+    }
+
+    /**
+     * PLZ je logischer Stelle (aus zugeordneten Ausschreibungen).
+     *
+     * @param list<int> $logischeStelleIds
+     * @return array<int, string>
+     */
+    public function getPlzFuerLogischeStellen(array $logischeStelleIds): array
+    {
+        if (empty($logischeStelleIds)) {
+            return [];
+        }
+        $tblZ = $this->db->prefix . Database::TABLE_ZUORDNUNGEN;
+        $tblA = $this->db->prefix . Database::TABLE_AUSSCHREIBUNGEN;
+        $placeholders = implode(',', array_fill(0, count($logischeStelleIds), '%d'));
+        $rows = $this->db->get_results(
+            $this->db->prepare(
+                "SELECT z.logische_stelle_id, GROUP_CONCAT(DISTINCT a.plz_einsatzort ORDER BY a.plz_einsatzort SEPARATOR ', ') AS plz
+                 FROM {$tblZ} z
+                 JOIN {$tblA} a ON a.stellennummer = z.stellennummer
+                 WHERE z.logische_stelle_id IN ({$placeholders})
+                   AND a.plz_einsatzort IS NOT NULL AND a.plz_einsatzort != ''
+                 GROUP BY z.logische_stelle_id",
+                ...$logischeStelleIds
+            ),
+            ARRAY_A
+        );
+        $result = [];
+        foreach ($logischeStelleIds as $id) {
+            $result[$id] = '';
+        }
+        foreach ($rows ?: [] as $r) {
+            $result[(int) $r['logische_stelle_id']] = (string) ($r['plz'] ?? '');
+        }
+        return $result;
     }
 }
