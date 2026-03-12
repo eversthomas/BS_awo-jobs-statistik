@@ -54,6 +54,7 @@ final class Installer
             plz_einsatzort varchar(10) DEFAULT NULL,
             einsatzort varchar(100) DEFAULT NULL,
             erstellt_von varchar(255) DEFAULT NULL,
+            in_statistik_beruecksichtigen tinyint(1) NOT NULL DEFAULT 1,
             quelle varchar(10) NOT NULL,
             importiert_am datetime NOT NULL,
             zuletzt_gesehen_api datetime DEFAULT NULL,

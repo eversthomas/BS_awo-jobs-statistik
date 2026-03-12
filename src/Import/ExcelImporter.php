@@ -186,10 +186,22 @@ final class ExcelImporter implements ImportInterface
             return '`' . $c . '`';
         }, $columns));
         $placeStr = implode(', ', $placeholders);
-        $updates = [];
-        foreach (array_diff($columns, ['stellennummer']) as $col) {
-            $updates[] = "`{$col}` = VALUES(`{$col}`)";
-        }
+        $updates = [
+            "`titel` = COALESCE(NULLIF(`titel`, ''), VALUES(`titel`))",
+            "`einrichtung` = COALESCE(NULLIF(`einrichtung`, ''), VALUES(`einrichtung`))",
+            "`fachbereich_boerse` = COALESCE(NULLIF(`fachbereich_boerse`, ''), VALUES(`fachbereich_boerse`))",
+            "`fachbereich_intern` = COALESCE(`fachbereich_intern`, VALUES(`fachbereich_intern`))",
+            "`anstellungsart` = COALESCE(NULLIF(`anstellungsart`, ''), VALUES(`anstellungsart`))",
+            "`vertragsart` = COALESCE(NULLIF(`vertragsart`, ''), VALUES(`vertragsart`))",
+            "`zeitmodell` = COALESCE(NULLIF(`zeitmodell`, ''), VALUES(`zeitmodell`))",
+            "`startdatum` = COALESCE(`startdatum`, VALUES(`startdatum`))",
+            "`stopdatum` = COALESCE(`stopdatum`, VALUES(`stopdatum`))",
+            "`plz_einsatzort` = COALESCE(NULLIF(`plz_einsatzort`, ''), VALUES(`plz_einsatzort`))",
+            "`einsatzort` = COALESCE(NULLIF(`einsatzort`, ''), VALUES(`einsatzort`))",
+            "`erstellt_von` = COALESCE(NULLIF(`erstellt_von`, ''), VALUES(`erstellt_von`))",
+            "`quelle` = IF(`quelle` = 'api' OR `quelle` = 'beide', 'beide', VALUES(`quelle`))",
+            "`importiert_am` = VALUES(`importiert_am`)",
+        ];
         $updateStr = implode(', ', $updates);
         $sql = "INSERT INTO `{$table}` ({$colsStr}) VALUES ({$placeStr}) ON DUPLICATE KEY UPDATE {$updateStr}";
         if ($values !== []) {

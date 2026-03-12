@@ -124,10 +124,9 @@ final class VakanzAnalyzer
         $sql = "SELECT plz_einsatzort, einsatzort,
                        COUNT(*) AS anzahl,
                        SUM(CASE
-                           WHEN stunden IS NOT NULL AND stunden > 0 THEN stunden / {$vollzeit}
-                           WHEN zeitmodell LIKE '%Vollzeit%' THEN 1.0
-                           ELSE 0
-                       END) AS vza_summe,
+                            WHEN stunden IS NOT NULL AND stunden > 0 THEN stunden / {$vollzeit}
+                            ELSE 1.0
+                        END) AS vza_summe,
                        GROUP_CONCAT(stellennummer ORDER BY stellennummer SEPARATOR ', ') AS stellennummern,
                        GROUP_CONCAT(DISTINCT titel ORDER BY titel SEPARATOR ' | ') AS titel_liste
                 FROM {$tblA}

@@ -36,12 +36,28 @@ final class SnapshotService
         $aktualisiert = 0;
 
         $current = $this->fetchCurrentPositions();
+        if ($current === null) {
+            return ['neu' => 0, 'aktualisiert' => 0];
+        }
+
         $today = date('Y-m-d');
         $yesterday = date('Y-m-d', strtotime('-1 day'));
         $now = date('Y-m-d H:i:s');
 
         $tblSnap = $this->db->prefix . Database::TABLE_SNAPSHOTS;
         $tblAuss = $this->db->prefix . Database::TABLE_AUSSCHREIBUNGEN;
+
+        $currentStellennummern = array_values(array_unique(array_column($current, 'stellennummer')));
+
+        /**
+         * JSON-API ist die Single Source of Truth für "aktuell online".
+         * Deshalb vor dem Setzen der aktuellen API-Stellen alle bisherigen Online-Markierungen zurücksetzen.
+         */
+        $this->db->query(
+            "UPDATE {$tblAuss}
+             SET zuletzt_gesehen_api = NULL
+             WHERE zuletzt_gesehen_api IS NOT NULL"
+        );
 
         foreach ($current as $sn) {
             $exists = $this->db->get_var($this->db->prepare(
@@ -62,14 +78,70 @@ final class SnapshotService
                 }
             }
 
-            $this->db->update(
-                $tblAuss,
-                ['zuletzt_gesehen_api' => $now],
-                ['stellennummer' => $sn['stellennummer']],
-                ['%s'],
-                ['%s']
-            );
+            $existsInAusschreibungen = $this->db->get_var($this->db->prepare(
+                "SELECT 1 FROM {$tblAuss} WHERE stellennummer = %s",
+                $sn['stellennummer']
+            ));
+
+            if ($existsInAusschreibungen) {
+                $ok = $this->db->update(
+                    $tblAuss,
+                    [
+                        'titel' => $sn['titel'] ?? '',
+                        'einrichtung' => $sn['einrichtung'] ?? '',
+                        'fachbereich_boerse' => $sn['fachbereich_boerse'] ?? '',
+                        'fachbereich_intern' => $sn['fachbereich_intern'] ?? null,
+                        'anstellungsart' => $sn['anstellungsart'] ?? '',
+                        'vertragsart' => $sn['vertragsart'] ?? '',
+                        'zeitmodell' => $sn['zeitmodell'] ?? '',
+                        'stunden' => $sn['stunden'],
+                        'stunden_quelle' => $sn['stunden_quelle'],
+                        'startdatum' => $sn['startdatum'] ?? null,
+                        'stopdatum' => $sn['stopdatum'] ?? null,
+                        'plz_einsatzort' => $sn['plz_einsatzort'] ?? null,
+                        'einsatzort' => $sn['einsatzort'] ?? null,
+                        'zuletzt_gesehen_api' => $now,
+                        'quelle' => 'api',
+                        'importiert_am' => $now,
+                    ],
+                    ['stellennummer' => $sn['stellennummer']]
+                );
+
+                if ($ok === false) {
+                    // optional: später zentrales Fehlerhandling ergänzen
+                }
+            } else {
+                $ok = $this->db->insert(
+                    $tblAuss,
+                    [
+                        'stellennummer' => $sn['stellennummer'],
+                        'titel' => $sn['titel'] ?? '',
+                        'einrichtung' => $sn['einrichtung'] ?? '',
+                        'fachbereich_boerse' => $sn['fachbereich_boerse'] ?? '',
+                        'fachbereich_intern' => $sn['fachbereich_intern'] ?? null,
+                        'anstellungsart' => $sn['anstellungsart'] ?? '',
+                        'vertragsart' => $sn['vertragsart'] ?? '',
+                        'zeitmodell' => $sn['zeitmodell'] ?? '',
+                        'stunden' => $sn['stunden'],
+                        'stunden_quelle' => $sn['stunden_quelle'],
+                        'startdatum' => $sn['startdatum'] ?? null,
+                        'stopdatum' => $sn['stopdatum'] ?? null,
+                        'plz_einsatzort' => $sn['plz_einsatzort'] ?? null,
+                        'einsatzort' => $sn['einsatzort'] ?? null,
+                        'erstellt_von' => null,
+                        'quelle' => 'api',
+                        'importiert_am' => $now,
+                        'zuletzt_gesehen_api' => $now,
+                    ]
+                );
+
+                if ($ok === false) {
+                    // optional: später zentrales Fehlerhandling ergänzen
+                }
+            }
+
             $aktualisiert++;
+
         }
 
         $yesterdayOnline = $this->db->get_col($this->db->prepare(
@@ -77,7 +149,6 @@ final class SnapshotService
             $yesterday,
             'online'
         ));
-        $currentStellennummern = array_column($current, 'stellennummer');
 
         foreach ($yesterdayOnline ?: [] as $stellennummer) {
             if (in_array($stellennummer, $currentStellennummern, true)) {
@@ -110,18 +181,22 @@ final class SnapshotService
     /**
      * API abrufen, alle Stellennummern + Stunden + Zeitmodell erfassen.
      *
-     * @return list<array{stellennummer: string, stunden: float|null, zeitmodell: string}>
+     * Rückgabe:
+     * - null = API-Fehler / JSON ungültig
+     * - []   = API erfolgreich gelesen, aber keine Stellen enthalten
+     *
+     * @return list<array{stellennummer: string, stunden: float|null, zeitmodell: string}>|null
      */
-    private function fetchCurrentPositions(): array
+    private function fetchCurrentPositions(): ?array
     {
         $json = $this->fetchApi();
         if ($json === null) {
-            return [];
+            return null;
         }
         $decoded = json_decode($json, true);
         $data = $this->extractItemList($decoded);
         if ($data === null) {
-            return [];
+            return null;
         }
 
         $result = [];
@@ -130,17 +205,41 @@ final class SnapshotService
                 continue;
             }
             $sn = $this->stringValue($item['Stellennummer'] ?? null);
-            if ($sn === null || $sn === '' || strlen($sn) > 20) {
-                continue;
+                if ($sn === null || $sn === '' || strlen($sn) > 20) {
+        continue;
+    }
+            $einleitungstext = is_string($item['Einleitungstext'] ?? null) ? $item['Einleitungstext'] : '';
+            $infos = is_string($item['Infos'] ?? null) ? $item['Infos'] : '';
+
+            $stunden = StundenParser::parse($einleitungstext);
+            $stundenQuelle = null;
+
+            if ($stunden !== null) {
+                $stundenQuelle = 'api_einleitung';
+            } else {
+                $stunden = StundenParser::parse($infos);
+                if ($stunden !== null) {
+                    $stundenQuelle = 'api_infos';
+                }
             }
-            $infos = $item['Infos'] ?? '';
-            $stunden = is_string($infos) ? StundenParser::parse($infos) : null;
+
             $zeitmodell = trim((string) ($item['Zeitmodell'] ?? '')) ?: null;
 
             $result[] = [
                 'stellennummer' => $sn,
+                'titel' => $this->stringValue($item['Stellenbezeichnung'] ?? null) ?? '',
+                'einrichtung' => $this->stringValue($item['Einrichtung'] ?? null) ?? '',
+                'fachbereich_boerse' => $this->stringValue($item['Fachbereich'] ?? null) ?? '',
+                'fachbereich_intern' => $this->stringValue($item['Mandantnr/Einrichtungsnr'] ?? null),
+                'anstellungsart' => $this->stringValue($item['Anstellungsart'] ?? null) ?? '',
+                'vertragsart' => $this->stringValue($item['Vertragsart'] ?? null) ?? '',
+                'zeitmodell' => $this->truncate($zeitmodell ?? '', 50),
+                'startdatum' => $this->timestampToDate($item['Startdatum'] ?? null),
+                'stopdatum' => $this->timestampToDate($item['Stopdatum'] ?? null),
+                'plz_einsatzort' => $this->stringValue($item['PLZ_Einsatzort'] ?? null),
+                'einsatzort' => $this->stringValue($item['Einsatzort'] ?? null),
                 'stunden' => $stunden,
-                'zeitmodell' => $zeitmodell,
+                'stunden_quelle' => $stundenQuelle,
             ];
         }
         return $result;
@@ -191,5 +290,35 @@ final class SnapshotService
         }
         $s = trim((string) $v);
         return $s === '' ? null : $s;
+    }
+
+    private function timestampToDate($v): ?string
+    {
+        if ($v === null || $v === '') {
+            return null;
+        }
+        $ts = is_numeric($v) ? (int) $v : null;
+        if ($ts === null || $ts < 0) {
+            return null;
+        }
+        return date('Y-m-d', $ts);
+    }
+    
+    private function truncate(?string $value, int $maxLength): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        if (function_exists('mb_substr')) {
+            return mb_substr($value, 0, $maxLength);
+        }
+
+        return substr($value, 0, $maxLength);
     }
 }

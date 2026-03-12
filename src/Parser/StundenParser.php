@@ -1,8 +1,9 @@
 <?php
 /**
- * Extraktion der Stundenzahl aus HTML-Fließtext (API-Feld Infos).
- * ARCHITECTURE.md: Regex für einfache Zahl und Spanne, Komma normalisieren.
- * Keine WordPress-Abhängigkeiten.
+ * Extraktion der Stundenzahl aus HTML-/Fließtext aus API-Feldern wie
+ * Einleitungstext oder Infos.
+ * Erkennt einfache Zahlen und Stunden-Spannen.
+ * Bei Spannen wird der höhere Wert zurückgegeben.
  */
 
 declare(strict_types=1);
@@ -13,29 +14,46 @@ final class StundenParser
 {
     /**
      * Stundenzahl aus HTML-Text extrahieren.
-     * Einfache Zahl (z. B. "21,00 Stunden", "39 Std.") oder Spanne ("25 bis 30 Stunden") → höherer Wert.
+     *
+     * Beispiele:
+     * - "21,00 Stunden"
+     * - "39 Std."
+     * - "10 Std./Woche"
+     * - "25 bis 30 Stunden"
+     * - "19,50 - 35 Std./Woche"
+     * - "20–30 Std."
+     * - "20-25 Std. bei einer 5,5 Tage-Woche"
      *
      * @return float|null NULL wenn kein Match
      */
     public static function parse(string $html): ?float
     {
         $text = strip_tags($html);
-        $text = trim($text);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace('/\x{00A0}/u', ' ', $text);
+        $text = preg_replace('/\s+/u', ' ', (string) $text);
+        $text = trim((string) $text);
+
         if ($text === '') {
             return null;
         }
 
-        // Spanne: "25 bis 30 Stunden" oder "25 bis 30 Std."
-        if (preg_match('/(\d+)[,.]?\d*\s*bis\s*(\d+)[,.]?\d*\s*(?:Stunden|Std\.?)/ui', $text, $m)) {
-            $low = (float) str_replace(',', '.', trim($m[1]));
-            $high = (float) str_replace(',', '.', trim($m[2]));
+        // Spannen:
+        // "25 bis 30 Stunden"
+        // "19,50 - 35 Std./Woche"
+        // "20–30 Std."
+        if (preg_match('/(\d+(?:[.,]\d+)?)\s*(?:bis|-|–|—)\s*(\d+(?:[.,]\d+)?)\s*(?:Stunden|Std\.?)(?:\s*\/\s*Woche)?/ui', $text, $m)) {
+            $low = (float) str_replace(',', '.', $m[1]);
+            $high = (float) str_replace(',', '.', $m[2]);
             return max($low, $high);
         }
 
-        // Einfache Zahl: "21,00 Stunden" oder "39 Std." oder "21.5 Stunden"
-        if (preg_match('/(\d+[,.]?\d*)\s*(?:Stunden|Std\.?)/ui', $text, $m)) {
-            $num = str_replace(',', '.', trim($m[1]));
-            $val = (float) $num;
+        // Einfache Zahl:
+        // "21,00 Stunden"
+        // "39 Std."
+        // "10 Std./Woche"
+        if (preg_match('/(\d+(?:[.,]\d+)?)\s*(?:Stunden|Std\.?)(?:\s*\/\s*Woche)?/ui', $text, $m)) {
+            $val = (float) str_replace(',', '.', $m[1]);
             return $val > 0 ? $val : null;
         }
 

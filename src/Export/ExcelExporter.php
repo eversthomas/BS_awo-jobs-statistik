@@ -160,7 +160,6 @@ final class ExcelExporter
 
     private function fillUebersicht(Spreadsheet $spreadsheet, VzaCalculator $vza, VakanzAnalyzer $vakanz): void
     {
-        $aktuell = $vza->berechneAktuell();
         $gesamt = $vza->berechneGesamt();
         $offen = $vakanz->offenSeit();
         $uebersichtCounts = $vakanz->getUebersichtCounts();
@@ -181,9 +180,6 @@ final class ExcelExporter
         $sheet->setCellValue('B' . $row, round($gesamt, 2));
         $sheet->getStyle('B' . $row)->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1);
         $row++;
-        $sheet->setCellValue('A' . $row, 'Unbekannt (Teilzeit)');
-        $sheet->setCellValue('B' . $row, $aktuell['unbekannt_anzahl'] ?? 0);
-        $row += 2;
 
         $sheet->setCellValue('A' . $row, 'Nach Stellentitel');
         $sheet->setCellValue('B' . $row, 'Anzahl');

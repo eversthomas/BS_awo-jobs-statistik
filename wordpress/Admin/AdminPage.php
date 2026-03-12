@@ -29,6 +29,8 @@ final class AdminPage
     public function __construct($wpdb)
     {
         $this->wpdb = $wpdb;
+
+        add_action('admin_init', [$this, 'handleAdminActions']);
     }
 
     public function registerMenu(): void
@@ -47,10 +49,15 @@ final class AdminPage
         add_submenu_page(self::MENU_SLUG, __('Logische Stellen', 'bs-awo-jobs-statistik'), __('Logische Stellen', 'bs-awo-jobs-statistik'), 'manage_options', self::PAGE_LOGISCHE, [$this, 'renderLogischeStellen']);
         add_submenu_page(self::MENU_SLUG, __('Einstellungen', 'bs-awo-jobs-statistik'), __('Einstellungen', 'bs-awo-jobs-statistik'), 'manage_options', self::PAGE_EINSTELLUNGEN, [$this, 'renderEinstellungen']);
     }
+    
+    public function handleAdminActions(): void
+    {
+        $this->maybeHandleAktiveStellenToggle();
+    }
 
     public function renderDashboard(): void
     {
-        $tblConfig = $this->wpdb->prefix . Database::TABLE_KONFIGURATION;
+    	$tblConfig = $this->wpdb->prefix . Database::TABLE_KONFIGURATION;
         $vollzeit = (int) ($this->wpdb->get_var($this->wpdb->prepare("SELECT wert FROM {$tblConfig} WHERE schluessel = %s", 'vollzeit_stunden')) ?: 39);
 
         $vza = new VzaCalculator($this->wpdb, $vollzeit);
@@ -68,9 +75,133 @@ final class AdminPage
         $offenTop = array_slice($offen, 0, 10);
         $plzStats = $vakanz->nachPlz();
         $uebersichtCounts = $vakanz->getUebersichtCounts();
+        
+        $tblA = $this->wpdb->prefix . Database::TABLE_AUSSCHREIBUNGEN;
+        $aktiveStellenRows = $this->wpdb->get_results(
+            "SELECT stellennummer, titel, einrichtung, fachbereich_boerse, fachbereich_intern,
+                    plz_einsatzort, einsatzort, zeitmodell, stunden, stunden_quelle, startdatum,
+                    in_statistik_beruecksichtigen
+             FROM {$tblA}
+             WHERE zuletzt_gesehen_api IS NOT NULL
+             ORDER BY fachbereich_boerse, einrichtung, titel, stellennummer",
+            ARRAY_A
+        );
+        
+        $aktiveSuche = isset($_GET['bs_as_q']) ? sanitize_text_field(wp_unslash($_GET['bs_as_q'])) : '';
+        $aktiveFachbereich = isset($_GET['bs_as_fb']) ? sanitize_text_field(wp_unslash($_GET['bs_as_fb'])) : '';
+        $aktiveMandantenfeld = isset($_GET['bs_as_fbi']) ? sanitize_text_field(wp_unslash($_GET['bs_as_fbi'])) : '';
+        $aktiveEinrichtung = isset($_GET['bs_as_einr']) ? sanitize_text_field(wp_unslash($_GET['bs_as_einr'])) : '';
+        $aktivePlz = isset($_GET['bs_as_plz']) ? sanitize_text_field(wp_unslash($_GET['bs_as_plz'])) : '';
+        $aktiveQuelle = isset($_GET['bs_as_sq']) ? sanitize_text_field(wp_unslash($_GET['bs_as_sq'])) : '';
+        
+        $normalizeFilterValue = static function (?string $value): string {
+            $value = trim((string) $value);
+            $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $value = preg_replace('/\x{00A0}/u', ' ', $value);
+            $value = preg_replace('/[‐-‒–—−]/u', '-', $value);
+            $value = preg_replace('/\s+/u', ' ', $value);
+            return mb_strtolower((string) $value);
+        };
+
+        $aktiveFachbereicheLocal = [];
+        $aktiveMandantenfelderLocal = [];
+        $aktiveEinrichtungenLocal = [];
+        $aktivePlzListeLocal = [];
+
+        foreach ($aktiveStellenRows ?: [] as $row) {
+            $fb = trim((string) ($row['fachbereich_boerse'] ?? ''));
+            $fbi = trim((string) ($row['fachbereich_intern'] ?? ''));
+            $einr = trim((string) ($row['einrichtung'] ?? ''));
+            $plz = trim((string) ($row['plz_einsatzort'] ?? ''));
+
+            if ($fb !== '') {
+                $fbKey = $normalizeFilterValue($fb);
+                if (!isset($aktiveFachbereicheLocal[$fbKey])) {
+                    $aktiveFachbereicheLocal[$fbKey] = $fb;
+                }
+            }
+
+            if ($fbi !== '') {
+                $fbiKey = $normalizeFilterValue($fbi);
+                if (!isset($aktiveMandantenfelderLocal[$fbiKey])) {
+                    $aktiveMandantenfelderLocal[$fbiKey] = $fbi;
+                }
+            }
+
+            if ($einr !== '') {
+                $einrKey = $normalizeFilterValue($einr);
+                if (!isset($aktiveEinrichtungenLocal[$einrKey])) {
+                    $aktiveEinrichtungenLocal[$einrKey] = $einr;
+                }
+            }
+
+            if ($plz !== '') {
+                $aktivePlzListeLocal[$plz] = $plz;
+            }
+        }
+
+        ksort($aktiveFachbereicheLocal);
+        ksort($aktiveMandantenfelderLocal);
+        ksort($aktiveEinrichtungenLocal);
+        ksort($aktivePlzListeLocal);
+
+        $aktiveStellenFiltered = array_values(array_filter($aktiveStellenRows ?: [], static function (array $row) use (
+            $aktiveSuche,
+            $aktiveFachbereich,
+            $aktiveMandantenfeld,
+            $aktiveEinrichtung,
+            $aktivePlz,
+            $aktiveQuelle,
+            $normalizeFilterValue
+        ): bool {
+            if (
+                $aktiveFachbereich !== ''
+                && $normalizeFilterValue((string) ($row['fachbereich_boerse'] ?? '')) !== $normalizeFilterValue($aktiveFachbereich)
+            ) {
+                return false;
+            }
+            if (
+                $aktiveMandantenfeld !== ''
+                && $normalizeFilterValue((string) ($row['fachbereich_intern'] ?? '')) !== $normalizeFilterValue($aktiveMandantenfeld)
+            ) {
+                return false;
+            }
+            if (
+                $aktiveEinrichtung !== ''
+                && $normalizeFilterValue((string) ($row['einrichtung'] ?? '')) !== $normalizeFilterValue($aktiveEinrichtung)
+            ) {
+                return false;
+            }
+            if ($aktivePlz !== '' && (string) ($row['plz_einsatzort'] ?? '') !== $aktivePlz) {
+                return false;
+            }
+            if ($aktiveQuelle !== '' && (string) ($row['stunden_quelle'] ?? '') !== $aktiveQuelle) {
+                return false;
+            }
+
+            if ($aktiveSuche !== '') {
+                $haystack = mb_strtolower(implode(' ', [
+                    (string) ($row['stellennummer'] ?? ''),
+                    (string) ($row['titel'] ?? ''),
+                    (string) ($row['einrichtung'] ?? ''),
+                    (string) ($row['fachbereich_boerse'] ?? ''),
+                    (string) ($row['fachbereich_intern'] ?? ''),
+                    (string) ($row['plz_einsatzort'] ?? ''),
+                    (string) ($row['einsatzort'] ?? ''),
+                    (string) ($row['zeitmodell'] ?? ''),
+                    (string) ($row['stunden_quelle'] ?? ''),
+                ]));
+                $needle = mb_strtolower($aktiveSuche);
+                if (mb_strpos($haystack, $needle) === false) {
+                    return false;
+                }
+            }
+
+            return true;
+        }));
 
         $activeTab = sanitize_key($_GET['bs_tab'] ?? 'uebersicht');
-        $tabs = ['uebersicht', 'charts', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz'];
+        $tabs = ['uebersicht', 'aktive_stellen', 'charts', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz'];
         if (!in_array($activeTab, $tabs, true)) {
             $activeTab = 'uebersicht';
         }
@@ -86,6 +217,7 @@ final class AdminPage
 
             <nav class="nav-tab-wrapper wp-clearfix" style="margin-bottom:0;">
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=uebersicht" class="nav-tab <?php echo $activeTab === 'uebersicht' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Übersicht', 'bs-awo-jobs-statistik'); ?></a>
+                <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=aktive_stellen" class="nav-tab <?php echo $activeTab === 'aktive_stellen' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Aktive Stellen', 'bs-awo-jobs-statistik'); ?></a>
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=charts" class="nav-tab <?php echo $activeTab === 'charts' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Charts', 'bs-awo-jobs-statistik'); ?></a>
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=fluktuation" class="nav-tab <?php echo $activeTab === 'fluktuation' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Fluktuation', 'bs-awo-jobs-statistik'); ?></a>
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=vakanzen" class="nav-tab <?php echo $activeTab === 'vakanzen' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Vakanzen', 'bs-awo-jobs-statistik'); ?></a>
@@ -105,10 +237,6 @@ final class AdminPage
                     <div class="card" style="padding:1rem;border-left:4px solid #00a32a;">
                         <strong><?php echo esc_html__('Gesamt-VZÄ', 'bs-awo-jobs-statistik'); ?></strong>
                         <div style="font-size:1.75rem;margin-top:.5rem;"><?php echo esc_html(number_format($gesamt, 2, ',', '.')); ?></div>
-                    </div>
-                    <div class="card" style="padding:1rem;border-left:4px solid #d63638;">
-                        <strong><?php echo esc_html__('Unbekannt (Teilzeit)', 'bs-awo-jobs-statistik'); ?></strong>
-                        <div style="font-size:1.75rem;margin-top:.5rem;"><?php echo esc_html((string) ($aktuell['unbekannt_anzahl'] ?? 0)); ?></div>
                     </div>
                 </div>
                 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.5rem;">
@@ -135,6 +263,158 @@ final class AdminPage
                         </tbody></table></div>
                 </div>
             <?php endif; ?>
+            
+            <?php if ($activeTab === 'aktive_stellen'): ?>
+            <?php
+
+            $aktiveGesamtAnzahl = 0;
+            $aktiveGesamtVza = 0.0;
+
+            foreach ($aktiveStellenFiltered ?: [] as $row) {
+                $aktiveGesamtAnzahl++;
+                $stunden = isset($row['stunden']) && $row['stunden'] !== null ? (float) $row['stunden'] : null;
+                $vzaWert = ($stunden !== null && $stunden > 0) ? round($stunden / $vollzeit, 4) : 1.0;
+                $aktiveGesamtVza += $vzaWert;
+            }
+            ?>
+            <h2><?php echo esc_html__('Aktive Stellen', 'bs-awo-jobs-statistik'); ?></h2>
+            <p class="description"><?php echo esc_html__('Zentrale Ansicht aller aktuell offenen Stellen aus der API. Diese Version 1 dient als neue verlässliche Masteransicht.', 'bs-awo-jobs-statistik'); ?></p>
+            <form method="get" style="margin:1rem 0 1.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem;align-items:end;">
+            <input type="hidden" name="page" value="<?php echo esc_attr(self::PAGE_DASHBOARD); ?>">
+            <input type="hidden" name="bs_tab" value="aktive_stellen">
+
+            <label>
+                <?php echo esc_html__('Suche', 'bs-awo-jobs-statistik'); ?><br>
+                <input type="text" name="bs_as_q" value="<?php echo esc_attr($aktiveSuche); ?>" placeholder="<?php echo esc_attr__('Stellennummer, Titel, Einrichtung, Ort …', 'bs-awo-jobs-statistik'); ?>" style="width:100%;">
+            </label>
+
+            <label>
+                <?php echo esc_html__('Fachbereich', 'bs-awo-jobs-statistik'); ?><br>
+                <select name="bs_as_fb" style="width:100%;">
+                    <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                    <?php foreach ($aktiveFachbereicheLocal as $fb): ?>
+                        <option value="<?php echo esc_attr($fb); ?>" <?php selected($aktiveFachbereich, $fb); ?>><?php echo esc_html($fb); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            
+            <label>
+                <?php echo esc_html__('Mandantenfeld', 'bs-awo-jobs-statistik'); ?><br>
+                <select name="bs_as_fbi" style="width:100%;">
+                    <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                    <?php foreach (array_values($aktiveMandantenfelderLocal) as $fbiValue): ?>
+                        <option value="<?php echo esc_attr((string) $fbiValue); ?>" <?php selected($aktiveMandantenfeld, (string) $fbiValue); ?>><?php echo esc_html((string) $fbiValue); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+
+            <label>
+                <?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?><br>
+                <select name="bs_as_einr" style="width:100%;">
+                    <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                    <?php foreach ($aktiveEinrichtungenLocal as $einr): ?>
+                        <option value="<?php echo esc_attr($einr); ?>" <?php selected($aktiveEinrichtung, $einr); ?>><?php echo esc_html($einr); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+
+            <label>
+                <?php echo esc_html__('PLZ', 'bs-awo-jobs-statistik'); ?><br>
+                <select name="bs_as_plz" style="width:100%;">
+                    <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                    <?php foreach ($aktivePlzListeLocal as $plz): ?>
+                        <option value="<?php echo esc_attr($plz); ?>" <?php selected($aktivePlz, $plz); ?>><?php echo esc_html($plz); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+
+            <label>
+                <?php echo esc_html__('Quelle Stunden', 'bs-awo-jobs-statistik'); ?><br>
+                <select name="bs_as_sq" style="width:100%;">
+                    <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                    <option value="api_infos" <?php selected($aktiveQuelle, 'api_infos'); ?>>api_infos</option>
+                    <option value="api_einleitung" <?php selected($aktiveQuelle, 'api_einleitung'); ?>>api_einleitung</option>
+                </select>
+            </label>
+
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+                <button type="submit" class="button button-primary"><?php echo esc_html__('Filtern', 'bs-awo-jobs-statistik'); ?></button>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=' . self::PAGE_DASHBOARD . '&bs_tab=aktive_stellen')); ?>" class="button"><?php echo esc_html__('Zurücksetzen', 'bs-awo-jobs-statistik'); ?></a>
+            </div>
+        </form>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem;margin:1rem 0 1.5rem;">
+                <div class="card" style="padding:1rem;border-left:4px solid #2271b1;">
+                    <strong><?php echo esc_html__('Aktive Stellen', 'bs-awo-jobs-statistik'); ?></strong>
+                    <div style="font-size:1.75rem;margin-top:.5rem;"><?php echo esc_html((string) $aktiveGesamtAnzahl); ?></div>
+                </div>
+                <div class="card" style="padding:1rem;border-left:4px solid #00a32a;">
+                    <strong><?php echo esc_html__('Aktive VZÄ', 'bs-awo-jobs-statistik'); ?></strong>
+                    <div style="font-size:1.75rem;margin-top:.5rem;"><?php echo esc_html(number_format($aktiveGesamtVza, 2, ',', '.')); ?></div>
+                </div>
+            </div>
+
+            <table class="widefat striped">
+                <thead>
+                <tr>
+                    <th><?php echo esc_html__('Berücksichtigen', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Stellennr.', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Titel', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Fachbereich', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Mandantenfeld', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('PLZ', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Ort', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Zeitmodell', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Stunden', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('VZÄ', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Startdatum', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Quelle Stunden', 'bs-awo-jobs-statistik'); ?></th>
+                </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($aktiveStellenFiltered ?: [] as $row): ?>
+                    <?php
+                    $stunden = isset($row['stunden']) && $row['stunden'] !== null ? (float) $row['stunden'] : null;
+                    $vzaWert = ($stunden !== null && $stunden > 0) ? round($stunden / $vollzeit, 4) : 1.0;
+                    ?>
+                    <tr>
+                        <td style="text-align:center;">
+                            <form method="post" style="margin:0;">
+                                <?php wp_nonce_field('bs_awo_toggle_aktive_stelle', 'bs_awo_toggle_nonce'); ?>
+                                <input type="hidden" name="bs_awo_action" value="toggle_aktive_stelle">
+                                <input type="hidden" name="bs_tab" value="aktive_stellen">
+                                <input type="hidden" name="stellennummer" value="<?php echo esc_attr((string) ($row['stellennummer'] ?? '')); ?>">
+                                <input type="hidden" name="bs_as_q" value="<?php echo esc_attr($aktiveSuche); ?>">
+                                <input type="hidden" name="bs_as_fb" value="<?php echo esc_attr($aktiveFachbereich); ?>">
+                                <input type="hidden" name="bs_as_fbi" value="<?php echo esc_attr($aktiveMandantenfeld); ?>">
+                                <input type="hidden" name="bs_as_einr" value="<?php echo esc_attr($aktiveEinrichtung); ?>">
+                                <input type="hidden" name="bs_as_plz" value="<?php echo esc_attr($aktivePlz); ?>">
+                                <input type="hidden" name="bs_as_sq" value="<?php echo esc_attr($aktiveQuelle); ?>">
+                                <input type="hidden" name="in_statistik_beruecksichtigen" value="<?php echo ((int) ($row['in_statistik_beruecksichtigen'] ?? 1) === 1) ? '0' : '1'; ?>">
+                                <input type="checkbox" <?php checked((int) ($row['in_statistik_beruecksichtigen'] ?? 1), 1); ?> onchange="this.form.submit()">
+                            </form>
+                        </td>
+                        <td><code><?php echo esc_html((string) ($row['stellennummer'] ?? '')); ?></code></td>
+                        <td><?php echo esc_html((string) ($row['titel'] ?? '')); ?></td>
+                        <td><?php echo esc_html((string) ($row['einrichtung'] ?? '')); ?></td>
+                        <td><?php echo esc_html((string) ($row['fachbereich_boerse'] ?? '')); ?></td>
+                        <td><?php echo esc_html((string) ($row['fachbereich_intern'] ?? '')); ?></td>
+                        <td><code><?php echo esc_html((string) ($row['plz_einsatzort'] ?? '')); ?></code></td>
+                        <td><?php echo esc_html((string) ($row['einsatzort'] ?? '')); ?></td>
+                        <td><?php echo esc_html((string) ($row['zeitmodell'] ?? '')); ?></td>
+                        <td><?php echo $stunden !== null ? esc_html(number_format($stunden, 2, ',', '.')) : '–'; ?></td>
+                        <td><?php echo esc_html(number_format($vzaWert, 2, ',', '.')); ?></td>
+                        <td><?php echo esc_html((string) ($row['startdatum'] ?? '')); ?></td>
+                        <td><?php echo esc_html((string) ($row['stunden_quelle'] ?? '')); ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (empty($aktiveStellenFiltered)): ?>
+                    <tr><td colspan="13"><?php echo esc_html__('Keine aktiven Stellen gefunden.', 'bs-awo-jobs-statistik'); ?></td></tr>
+                <?php endif; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
 
             <?php if ($activeTab === 'charts'): ?>
                 <?php
@@ -394,6 +674,52 @@ final class AdminPage
             </div>
         </div>
         <?php
+    }
+    
+    private function maybeHandleAktiveStellenToggle(): void
+    {
+        if (!isset($_POST['bs_awo_action']) || $_POST['bs_awo_action'] !== 'toggle_aktive_stelle') {
+            return;
+        }
+
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        if (!wp_verify_nonce($_POST['bs_awo_toggle_nonce'] ?? '', 'bs_awo_toggle_aktive_stelle')) {
+            return;
+        }
+
+        $stellennummer = sanitize_text_field($_POST['stellennummer'] ?? '');
+        if ($stellennummer === '') {
+            return;
+        }
+
+        $wert = isset($_POST['in_statistik_beruecksichtigen']) && (string) $_POST['in_statistik_beruecksichtigen'] === '0' ? 0 : 1;
+
+        $tblA = $this->wpdb->prefix . Database::TABLE_AUSSCHREIBUNGEN;
+        $this->wpdb->update(
+            $tblA,
+            ['in_statistik_beruecksichtigen' => $wert],
+            ['stellennummer' => $stellennummer],
+            ['%d'],
+            ['%s']
+        );
+
+        $redirectArgs = [
+            'page' => self::PAGE_DASHBOARD,
+            'bs_tab' => 'aktive_stellen',
+        ];
+
+        foreach (['bs_as_q', 'bs_as_fb', 'bs_as_fbi', 'bs_as_einr', 'bs_as_plz', 'bs_as_sq'] as $param) {
+            if (isset($_POST[$param]) && $_POST[$param] !== '') {
+                $redirectArgs[$param] = sanitize_text_field(wp_unslash($_POST[$param]));
+            }
+        }
+
+        nocache_headers();
+        wp_safe_redirect(add_query_arg($redirectArgs, admin_url('admin.php')), 303);
+        exit;
     }
 
     public function renderImport(): void

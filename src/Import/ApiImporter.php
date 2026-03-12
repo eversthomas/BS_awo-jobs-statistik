@@ -80,10 +80,23 @@ final class ApiImporter implements ImportInterface
             $row['importiert_am'] = $now;
             $row['zuletzt_gesehen_api'] = $now;
 
-            $infos = $item['Infos'] ?? '';
-            $stunden = is_string($infos) ? StundenParser::parse($infos) : null;
+            $einleitungstext = is_string($item['Einleitungstext'] ?? null) ? $item['Einleitungstext'] : '';
+            $infos = is_string($item['Infos'] ?? null) ? $item['Infos'] : '';
+
+            $stunden = StundenParser::parse($einleitungstext);
+            $stundenQuelle = null;
+
+            if ($stunden !== null) {
+                $stundenQuelle = 'api_einleitung';
+            } else {
+                $stunden = StundenParser::parse($infos);
+                if ($stunden !== null) {
+                    $stundenQuelle = 'api_infos';
+                }
+            }
+
             $row['stunden'] = $stunden;
-            $row['stunden_quelle'] = $stunden !== null ? 'api' : null;
+            $row['stunden_quelle'] = $stundenQuelle;
 
             if ($this->upsertRow($table, $row)) {
                 $success++;
@@ -150,7 +163,7 @@ final class ApiImporter implements ImportInterface
             'fachbereich_intern' => $this->stringValue($item['Mandantnr/Einrichtungsnr'] ?? null),
             'anstellungsart' => $this->stringValue($item['Anstellungsart'] ?? null) ?? '',
             'vertragsart' => $this->stringValue($item['Vertragsart'] ?? null) ?? '',
-            'zeitmodell' => $this->stringValue($item['Zeitmodell'] ?? null) ?? '',
+            'zeitmodell' => $this->truncate($this->stringValue($item['Zeitmodell'] ?? null) ?? '', 50),
             'startdatum' => $this->timestampToDate($item['Startdatum'] ?? null),
             'stopdatum' => $this->timestampToDate($item['Stopdatum'] ?? null),
             'plz_einsatzort' => $this->stringValue($item['PLZ_Einsatzort'] ?? null),
@@ -179,6 +192,24 @@ final class ApiImporter implements ImportInterface
             return null;
         }
         return date('Y-m-d', $ts);
+    }
+    
+    private function truncate(?string $value, int $maxLength): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        if (function_exists('mb_substr')) {
+            return mb_substr($value, 0, $maxLength);
+        }
+
+        return substr($value, 0, $maxLength);
     }
 
     /**

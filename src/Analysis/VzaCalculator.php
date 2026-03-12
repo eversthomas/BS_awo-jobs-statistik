@@ -81,20 +81,25 @@ final class VzaCalculator
     {
         $tbl = $this->db->prefix . Database::TABLE_AUSSCHREIBUNGEN;
         $rows = $this->db->get_results(
-            "SELECT stunden, zeitmodell FROM {$tbl} WHERE zuletzt_gesehen_api IS NOT NULL",
+            "SELECT stunden, zeitmodell
+             FROM {$tbl}
+             WHERE zuletzt_gesehen_api IS NOT NULL",
             ARRAY_A
         );
 
         $summe = 0.0;
+
         foreach ($rows ?: [] as $row) {
             $vza = $this->einzelVza(
                 $row['stunden'] !== null ? (float) $row['stunden'] : null,
                 (string) ($row['zeitmodell'] ?? '')
             );
+
             if ($vza !== null) {
                 $summe += $vza;
             }
         }
+
         return round($summe, 2);
     }
 
@@ -164,8 +169,7 @@ final class VzaCalculator
                 "SELECT snapshot_datum,
                         SUM(CASE
                             WHEN stunden IS NOT NULL AND stunden > 0 THEN stunden / %f
-                            WHEN zeitmodell LIKE '%%Vollzeit%%' THEN 1.0
-                            ELSE 0
+                            ELSE 1.0
                         END) AS vza_summe
                  FROM {$tblSnap}
                  WHERE status = 'online'
@@ -187,7 +191,8 @@ final class VzaCalculator
 
     /**
      * VZÄ für eine einzelne Stelle.
-     * stunden/vollzeitStunden; NULL + Vollzeit → 1.0; Teilzeit ohne Stunden → NULL.
+     * Wenn Stunden vorhanden sind: stunden / vollzeitStunden.
+     * Wenn keine Stunden erkennbar sind: Fallback 1.0.
      *
      * @return float|null
      */
@@ -196,9 +201,7 @@ final class VzaCalculator
         if ($stunden !== null && $stunden > 0) {
             return round($stunden / $this->vollzeitStunden, 4);
         }
-        if (stripos($zeitmodell, 'Vollzeit') !== false) {
-            return 1.0;
-        }
-        return null;
+
+        return 1.0;
     }
 }
