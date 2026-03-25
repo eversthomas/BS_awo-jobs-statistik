@@ -53,6 +53,28 @@ if (is_admin()) {
             $exporter->exportAndSend();
         }
 
+        if ($exportTab === 'aktive_stellen' && \wp_verify_nonce($_GET['_wpnonce'] ?? '', 'bs_awo_export_aktive_stellen')) {
+            $filter = new \BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenFilterInput(
+                isset($_GET['bs_as_q']) ? \sanitize_text_field(\wp_unslash($_GET['bs_as_q'])) : '',
+                isset($_GET['bs_as_fb']) ? \sanitize_text_field(\wp_unslash($_GET['bs_as_fb'])) : '',
+                isset($_GET['bs_as_fbi']) ? \sanitize_text_field(\wp_unslash($_GET['bs_as_fbi'])) : '',
+                isset($_GET['bs_as_einr']) ? \sanitize_text_field(\wp_unslash($_GET['bs_as_einr'])) : '',
+                isset($_GET['bs_as_plz']) ? \sanitize_text_field(\wp_unslash($_GET['bs_as_plz'])) : '',
+                isset($_GET['bs_as_sq']) ? \sanitize_text_field(\wp_unslash($_GET['bs_as_sq'])) : ''
+            );
+            $scope = isset($_GET['bs_as_export_scope']) ? \sanitize_key(\wp_unslash($_GET['bs_as_export_scope'])) : \BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenExportOptions::SCOPE_FILTERED;
+            $stat = isset($_GET['bs_as_export_stat']) ? \sanitize_key(\wp_unslash($_GET['bs_as_export_stat'])) : \BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenExportOptions::STAT_ALLE;
+            if (!\in_array($scope, [\BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenExportOptions::SCOPE_ALL, \BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenExportOptions::SCOPE_FILTERED], true)) {
+                $scope = \BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenExportOptions::SCOPE_FILTERED;
+            }
+            if (!\in_array($stat, [\BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenExportOptions::STAT_ALLE, \BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenExportOptions::STAT_NUR_BERUECKSICHTIGT], true)) {
+                $stat = \BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenExportOptions::STAT_ALLE;
+            }
+            $aktiveOpts = new \BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenExportOptions($scope, $stat);
+            $exporter = new \BS_Awo_Jobs_Statistik\Export\ExcelExporter($GLOBALS['wpdb'], $vollzeit);
+            $exporter->exportAndSend('aktive_stellen', $filter, $aktiveOpts);
+        }
+
         $validExportTabs = ['uebersicht', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz', 'alle'];
         if (\in_array($exportTab, $validExportTabs, true) && \wp_verify_nonce($_GET['_wpnonce'] ?? '', 'bs_awo_export_' . $exportTab)) {
             $exporter = new \BS_Awo_Jobs_Statistik\Export\ExcelExporter($GLOBALS['wpdb'], $vollzeit);

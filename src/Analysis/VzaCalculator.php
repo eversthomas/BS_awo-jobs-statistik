@@ -204,4 +204,14 @@ final class VzaCalculator
 
         return 1.0;
     }
+
+    /**
+     * VZÄ für eine Zeile der Liste „Aktive Stellen“ (entspricht Dashboard & Snapshot-Fallback).
+     */
+    public function vzaFuerListenzeile(?float $stunden): float
+    {
+        $vza = $this->einzelVza($stunden, '');
+
+        return $vza !== null ? $vza : 1.0;
+    }
 }
