@@ -581,12 +581,25 @@ final class EinrichtungenStammRepository
     public function seedMissingFromAusschreibungen(): array
     {
         $tblA = $this->wpdb->prefix . Database::TABLE_AUSSCHREIBUNGEN;
+        // Nur Zeilen, die über die API gesehen wurden (oder gemischt api/excel): keine reinen Excel-/Altimporte ohne API.
+        // Mandantenfeld: bei mehreren unterschiedlichen internen Kürzeln pro Einrichtungsstring nicht mit MAX() raten.
         $sql = "SELECT
                     TRIM(einrichtung) AS einrichtung,
                     COALESCE(NULLIF(MAX(TRIM(fachbereich_boerse)), ''), '') AS fachbereich_boerse,
-                    MAX(fachbereich_intern) AS fachbereich_intern
+                    CASE
+                        WHEN COUNT(DISTINCT NULLIF(TRIM(COALESCE(fachbereich_intern, '')), '')) > 1 THEN NULL
+                        ELSE MAX(NULLIF(TRIM(COALESCE(fachbereich_intern, '')), ''))
+                    END AS fachbereich_intern,
+                    CASE
+                        WHEN COUNT(DISTINCT NULLIF(TRIM(COALESCE(fachbereich_intern, '')), '')) > 1 THEN 1
+                        ELSE 0
+                    END AS mandanten_konflikt
                 FROM {$tblA}
                 WHERE einrichtung IS NOT NULL AND TRIM(einrichtung) != ''
+                  AND (
+                      zuletzt_gesehen_api IS NOT NULL
+                      OR quelle IN ('api', 'beide')
+                  )
                 GROUP BY TRIM(einrichtung)
                 ORDER BY einrichtung ASC";
         $agg = $this->wpdb->get_results($sql, ARRAY_A);
@@ -607,6 +620,7 @@ final class EinrichtungenStammRepository
             if ($raw === '') {
                 continue;
             }
+            $mandantKonflikt = (int) ($row['mandanten_konflikt'] ?? 0) === 1;
             $key = EinrichtungenMatching::matchKeyFromRaw($raw);
             if ($key === '') {
                 continue;
@@ -632,6 +646,12 @@ final class EinrichtungenStammRepository
 
                 $oldHint = isset($stammRow['pruef_hinweis']) ? (string) $stammRow['pruef_hinweis'] : '';
                 $reasons = EinrichtungenMatching::detectApiStammAbweichungen($stammRow, $raw, $fb, $fbi);
+                if ($mandantKonflikt) {
+                    $reasons[] = \__(
+                        'Mandantenfeld in den Ausschreibungen nicht eindeutig (mehrere verschiedene interne Kürzel unter demselben Einrichtungsnamen).',
+                        'bs-awo-jobs-statistik'
+                    );
+                }
                 $mergedHint = self::truncatePruefHinweisForDb(
                     EinrichtungenMatching::mergeApiAbweichungInPruefHinweis(
                         $oldHint !== '' ? $oldHint : null,
@@ -713,6 +733,12 @@ final class EinrichtungenStammRepository
                     $aehnlich['id'],
                     (string) $aehnlich['prozent']
                 );
+                if ($mandantKonflikt) {
+                    $hinweis .= "\n\n" . \__(
+                        'Mandantenfeld in den Ausschreibungen nicht eindeutig (mehrere verschiedene interne Kürzel unter demselben Einrichtungsnamen).',
+                        'bs-awo-jobs-statistik'
+                    );
+                }
                 $this->wpdb->insert($t, [
                     'einrichtung' => $raw,
                     'einrichtung_normalized' => $key,
@@ -767,6 +793,16 @@ final class EinrichtungenStammRepository
                 continue;
             }
 
+            $neuPruefHinweis = $mandantKonflikt
+                ? \__(
+                    'Mandantenfeld in den Ausschreibungen nicht eindeutig (mehrere verschiedene interne Kürzel unter demselben Einrichtungsnamen).',
+                    'bs-awo-jobs-statistik'
+                )
+                : null;
+            $neuPruefStatus = $mandantKonflikt
+                ? EinrichtungenMatching::PRUEFSTATUS_PRUEFEN
+                : EinrichtungenMatching::PRUEFSTATUS_OK;
+
             $this->wpdb->insert($t, [
                 'einrichtung' => $raw,
                 'einrichtung_normalized' => $key,
@@ -782,8 +818,8 @@ final class EinrichtungenStammRepository
                 'soll_vza_4' => null,
                 'soll_vza_5' => null,
                 'gesamt_vza_override' => null,
-                'pruefstatus' => EinrichtungenMatching::PRUEFSTATUS_OK,
-                'pruef_hinweis' => null,
+                'pruefstatus' => $neuPruefStatus,
+                'pruef_hinweis' => $neuPruefHinweis,
                 'quelle' => EinrichtungenMatching::QUELLE_SEED,
                 'erstellt_am' => $now,
                 'aktualisiert_am' => $now,
@@ -807,8 +843,8 @@ final class EinrichtungenStammRepository
                     'soll_vza_4' => null,
                     'soll_vza_5' => null,
                     'gesamt_vza_override' => null,
-                    'pruefstatus' => EinrichtungenMatching::PRUEFSTATUS_OK,
-                    'pruef_hinweis' => null,
+                    'pruefstatus' => $neuPruefStatus,
+                    'pruef_hinweis' => $neuPruefHinweis,
                     'quelle' => EinrichtungenMatching::QUELLE_SEED,
                     'erstellt_am' => $now,
                     'aktualisiert_am' => $now,
@@ -817,9 +853,34 @@ final class EinrichtungenStammRepository
                 $idToRow = EinrichtungenStammCluster::idMap($stammRows);
             }
             $neu++;
+            if ($mandantKonflikt) {
+                $pruef++;
+            }
         }
 
         return ['neu' => $neu, 'bereits_zugeordnet' => $bereits, 'prueffaelle' => $pruef];
+    }
+
+    /**
+     * Entfernt alle Zeilen aus der Stammdaten-Tabelle (Einrichtungen inkl. Aliase).
+     * Tabelle `ausschreibungen` und API-Sync bleiben unverändert.
+     *
+     * @return int Anzahl der zuvor vorhandenen Zeilen bei Erfolg, -1 bei Datenbankfehler
+     */
+    public function deleteAllStammRows(): int
+    {
+        $t = $this->table();
+        $before = (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$t}");
+        if ($before === 0) {
+            return 0;
+        }
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- fester Plugin-Tabellenname.
+        $ok = $this->wpdb->query("DELETE FROM {$t}");
+        if ($ok === false) {
+            return -1;
+        }
+
+        return $before;
     }
 
     /**

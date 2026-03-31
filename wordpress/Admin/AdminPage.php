@@ -33,6 +33,12 @@ final class AdminPage
     public const PAGE_EINRICHTUNGEN = 'bs-awo-jobs-einrichtungen';
     public const PAGE_EINSTELLUNGEN = 'bs-awo-jobs-einstellungen';
 
+    /**
+     * Gefahrenzone auf der Seite „Stammdaten Einrichtungen“: alle Stammzeilen löschen und neu seeden.
+     * Für eine finale Produktionsversion auf false setzen, um den Bereich auszublenden.
+     */
+    private const SHOW_STAMMDATEN_KOMPLETTRESET = true;
+
     /** @var \wpdb */
     private $wpdb;
 
@@ -1180,6 +1186,21 @@ final class AdminPage
             $detail = isset($_GET['bs_awo_master_msg']) ? sanitize_text_field(wp_unslash(rawurldecode((string) $_GET['bs_awo_master_msg']))) : '';
             $msg = $detail !== '' ? $detail : __('Die Master-Zuordnung konnte nicht gespeichert werden.', 'bs-awo-jobs-statistik');
             echo '<div class="notice notice-error is-dismissible"><p>' . esc_html($msg) . '</p></div>';
+        } elseif ($notice === 'stamm_reset_error') {
+            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__('Der Stammdaten-Reset ist fehlgeschlagen (Daten wurden nicht gelöscht oder nicht vollständig). Bitte Datenbank-Logs prüfen und erneut versuchen.', 'bs-awo-jobs-statistik') . '</p></div>';
+        } elseif ($notice === 'stamm_reset_done') {
+            $del = isset($_GET['bs_awo_stamm_deleted']) ? (int) $_GET['bs_awo_stamm_deleted'] : 0;
+            $neu = isset($_GET['bs_awo_notice_neu']) ? (int) $_GET['bs_awo_notice_neu'] : 0;
+            $bereits = isset($_GET['bs_awo_notice_bereits']) ? (int) $_GET['bs_awo_notice_bereits'] : 0;
+            $pruef = isset($_GET['bs_awo_notice_pruef']) ? (int) $_GET['bs_awo_notice_pruef'] : 0;
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html(sprintf(
+                /* translators: 1: number of deleted master rows, 2: new rows from seed, 3: already matched, 4: review cases */
+                __('Stammdaten zurückgesetzt: %1$d Stammzeilen entfernt. Anschließende Übernahme aus Ausschreibungen: %2$d neue Zeilen (davon %4$d Prüffälle), %3$d bereits zugeordnet.', 'bs-awo-jobs-statistik'),
+                $del,
+                $neu,
+                $bereits,
+                $pruef
+            )) . '</p></div>';
         }
 
         $editId = isset($_GET['bs_es_edit']) ? (int) $_GET['bs_es_edit'] : 0;
@@ -1297,7 +1318,7 @@ final class AdminPage
 
             <div class="card" style="padding:1rem;margin:1rem 0;max-width:920px;">
                 <h2 style="margin-top:0;"><?php echo esc_html__('Fehlende Einrichtungen aus Ausschreibungen anlegen', 'bs-awo-jobs-statistik'); ?></h2>
-                <p class="description"><?php echo esc_html__('Matching: gleicher normalisierter Name → keine Dublette; „Letzter API-Name“, Zeitstempel und der Match-Key aus dem Stammnamen werden gepflegt. Weicht der aggregierte API-Name oder ein Fachbereich/Mandantenfeld vom Stammsatz ab, bleibt der Stamm unverändert, es entsteht ein Prüffall mit Hinweisblock. Vermutlich ähnliche Namen erzeugen sichtbare Dubletten-Prüffälle (kein automatisches Zusammenführen). Klar neue Namen werden normal angelegt. Soll-/Bemerkungsfelder der Stammzeile bleiben unangetastet.', 'bs-awo-jobs-statistik'); ?></p>
+                <p class="description"><?php echo esc_html__('Grundlage sind nur Ausschreibungszeilen, die über die API synchronisiert wurden (oder Quelle api/beide mit API-Zeitstempel) — reine Excel-Zeilen ohne API werden für den Seed ignoriert. Matching: gleicher normalisierter Name → keine Dublette; „Letzter API-Name“, Zeitstempel und der Match-Key aus dem Stammnamen werden gepflegt. Weicht der aggregierte Name oder ein Fachbereich/Mandantenfeld ab, bleibt der Stamm unverändert, es entsteht ein Prüffall. Mehrere verschiedene Mandantenfelder unter demselben Einrichtungsnamen werden nicht geraten (Hinweis statt MAX-Wert). Vermutlich ähnliche Namen erzeugen Dubletten-Prüffälle. Soll-/Bemerkungsfelder der Stammzeile bleiben unangetastet.', 'bs-awo-jobs-statistik'); ?></p>
                 <form method="post">
                     <?php wp_nonce_field('bs_awo_einrichtung_seed', 'bs_awo_einrichtung_seed_nonce'); ?>
                     <input type="hidden" name="bs_awo_action" value="einrichtung_seed">
@@ -1309,6 +1330,57 @@ final class AdminPage
                     <?php submit_button(__('Jetzt übernehmen', 'bs-awo-jobs-statistik'), 'secondary'); ?>
                 </form>
             </div>
+
+            <?php if (self::SHOW_STAMMDATEN_KOMPLETTRESET) : ?>
+            <div class="card" style="padding:1rem;margin:1rem 0;max-width:920px;border-left:4px solid #d63638;box-shadow:0 1px 1px rgba(0,0,0,.04);background:#fcf0f1;">
+                <h2 style="margin-top:0;color:#1d2327;"><?php echo esc_html__('Gefahrenzone: Stammdaten komplett leeren', 'bs-awo-jobs-statistik'); ?></h2>
+                <p style="font-weight:600;color:#b32d2e;margin:0 0 0.75rem;">
+                    <?php echo esc_html__('Achtung: Es werden alle Einrichtungs-Stammdaten unwiderruflich gelöscht (inkl. Soll-VZÄ, Bemerkungen, Master-Zuordnungen und manueller Pflege).', 'bs-awo-jobs-statistik'); ?>
+                </p>
+                <p class="description" style="margin:0 0 1rem;">
+                    <?php echo esc_html__('Die Tabelle Ausschreibungen (API-/Import-Daten) wird nicht anfallen. Direkt danach wird dieselbe Übernahme wie bei „Fehlende Einrichtungen aus Ausschreibungen anlegen“ ausgeführt, damit Sie aus dem aktuellen API-Bestand neu starten können.', 'bs-awo-jobs-statistik'); ?>
+                </p>
+                <ul class="ul-disc" style="margin:0 0 1rem 1.25rem;list-style:disc;">
+                    <li><?php echo esc_html__('Vor dem Live-Einsatz: nur in Testumgebungen nutzen oder nach Abstimmung mit allen Beteiligten.', 'bs-awo-jobs-statistik'); ?></li>
+                    <li><?php echo esc_html__('Sicherung: Bei Bedarf vorher ein Datenbank- oder Site-Backup anlegen.', 'bs-awo-jobs-statistik'); ?></li>
+                </ul>
+                <form method="post" class="bs-awo-stamm-reset-form" action="<?php echo esc_url(admin_url('admin.php')); ?>">
+                    <?php wp_nonce_field('bs_awo_einrichtung_stamm_reset', 'bs_awo_einrichtung_stamm_reset_nonce'); ?>
+                    <input type="hidden" name="bs_awo_action" value="einrichtung_stamm_reset_all">
+                    <input type="hidden" name="page" value="<?php echo esc_attr(self::PAGE_EINRICHTUNGEN); ?>">
+                    <?php foreach ($filterQueryBase as $k => $v): ?>
+                        <?php if ($k !== 'page'): ?>
+                            <input type="hidden" name="filter_ret_<?php echo esc_attr($k); ?>" value="<?php echo esc_attr((string) $v); ?>">
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                    <p style="margin:0 0 1rem;">
+                        <label style="display:flex;align-items:flex-start;gap:0.5rem;max-width:52rem;">
+                            <input type="checkbox" name="bs_awo_stamm_reset_confirmed" value="1" required style="margin-top:0.2rem;">
+                            <span><?php echo esc_html__('Ich habe verstanden, dass alle Stammdaten-Einträge dauerhaft entfernt werden und die Liste danach nur aus den vorhandenen synchronisierten Ausschreibungen neu aufgebaut wird.', 'bs-awo-jobs-statistik'); ?></span>
+                        </label>
+                    </p>
+                    <p style="margin:0;">
+                        <button type="submit" class="button" style="border-color:#d63638;color:#b32d2e;background:#fff;">
+                            <?php echo esc_html__('Alle Stammdaten löschen und aus Ausschreibungen neu übernehmen', 'bs-awo-jobs-statistik'); ?>
+                        </button>
+                    </p>
+                </form>
+                <script>
+                (function(){
+                    var f = document.querySelector('.bs-awo-stamm-reset-form');
+                    if (!f) return;
+                    var msg = <?php echo wp_json_encode(
+                        __("Letzte Sicherheitsabfrage:\n\n• ALLE Einrichtungs-Stammdaten werden GELÖSCHT.\n• Manuell gepflegte Sollwerte und Zuordnungen gehen verloren.\n• Ausschreibungen bleiben erhalten; danach wird neu „geseedet“.\n\nWirklich ausführen?", 'bs-awo-jobs-statistik')
+                    ); ?>;
+                    f.addEventListener('submit', function(e) {
+                        if (!window.confirm(msg)) {
+                            e.preventDefault();
+                        }
+                    });
+                })();
+                </script>
+            </div>
+            <?php endif; ?>
 
             <form method="get" style="margin:1rem 0 1.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem;align-items:end;">
                 <input type="hidden" name="page" value="<?php echo esc_attr(self::PAGE_EINRICHTUNGEN); ?>">
@@ -1690,6 +1762,37 @@ final class AdminPage
             $sum = $repo->seedMissingFromAusschreibungen();
             $redirect = $this->einrichtungStammRedirectArgsFromPost();
             $redirect['bs_awo_notice'] = 'seeded';
+            $redirect['bs_awo_notice_neu'] = (string) $sum['neu'];
+            $redirect['bs_awo_notice_bereits'] = (string) $sum['bereits_zugeordnet'];
+            $redirect['bs_awo_notice_pruef'] = (string) $sum['prueffaelle'];
+            nocache_headers();
+            wp_safe_redirect(add_query_arg($redirect, admin_url('admin.php')), 303);
+            exit;
+        }
+
+        if ($action === 'einrichtung_stamm_reset_all') {
+            if (!self::SHOW_STAMMDATEN_KOMPLETTRESET) {
+                return;
+            }
+            if (!wp_verify_nonce($_POST['bs_awo_einrichtung_stamm_reset_nonce'] ?? '', 'bs_awo_einrichtung_stamm_reset')) {
+                return;
+            }
+            if (empty($_POST['bs_awo_stamm_reset_confirmed']) || (string) $_POST['bs_awo_stamm_reset_confirmed'] !== '1') {
+                return;
+            }
+            $repo = new EinrichtungenStammRepository($this->wpdb);
+            $deleted = $repo->deleteAllStammRows();
+            if ($deleted < 0) {
+                $redirect = $this->einrichtungStammRedirectArgsFromPost();
+                $redirect['bs_awo_notice'] = 'stamm_reset_error';
+                nocache_headers();
+                wp_safe_redirect(add_query_arg($redirect, admin_url('admin.php')), 303);
+                exit;
+            }
+            $sum = $repo->seedMissingFromAusschreibungen();
+            $redirect = $this->einrichtungStammRedirectArgsFromPost();
+            $redirect['bs_awo_notice'] = 'stamm_reset_done';
+            $redirect['bs_awo_stamm_deleted'] = (string) $deleted;
             $redirect['bs_awo_notice_neu'] = (string) $sum['neu'];
             $redirect['bs_awo_notice_bereits'] = (string) $sum['bereits_zugeordnet'];
             $redirect['bs_awo_notice_pruef'] = (string) $sum['prueffaelle'];
