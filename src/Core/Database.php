@@ -16,6 +16,8 @@ final class Database
     public const TABLE_ZUORDNUNGEN = 'bs_awojobs_zuordnungen';
     public const TABLE_SNAPSHOTS = 'bs_awojobs_snapshots';
     public const TABLE_KONFIGURATION = 'bs_awojobs_konfiguration';
+    /** Stammdaten Einrichtungen (Soll-VZÄ-Vorbereitung, unabhängig von Ausschreibungs-Lifecycle) */
+    public const TABLE_EINRICHTUNGEN_STAMM = 'bs_awojobs_einrichtungen_stamm';
 
     /**
      * Liefert alle Tabellen-Suffixe (für Install/Uninstall).
@@ -30,6 +32,7 @@ final class Database
             self::TABLE_ZUORDNUNGEN,
             self::TABLE_SNAPSHOTS,
             self::TABLE_KONFIGURATION,
+            self::TABLE_EINRICHTUNGEN_STAMM,
         ];
     }
 }

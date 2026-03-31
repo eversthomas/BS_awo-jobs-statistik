@@ -84,13 +84,19 @@ final class SnapshotService
             ));
 
             if ($existsInAusschreibungen) {
+                $existingRow = $this->db->get_row($this->db->prepare(
+                    "SELECT einrichtung, fachbereich_intern FROM {$tblAuss} WHERE stellennummer = %s",
+                    $sn['stellennummer']
+                ), ARRAY_A);
+                $merged = $this->mergeGeschuetzteAusschreibungFelder(is_array($existingRow) ? $existingRow : null, $sn);
+
                 $ok = $this->db->update(
                     $tblAuss,
                     [
                         'titel' => $sn['titel'] ?? '',
-                        'einrichtung' => $sn['einrichtung'] ?? '',
+                        'einrichtung' => $merged['einrichtung'],
                         'fachbereich_boerse' => $sn['fachbereich_boerse'] ?? '',
-                        'fachbereich_intern' => $sn['fachbereich_intern'] ?? null,
+                        'fachbereich_intern' => $merged['fachbereich_intern'],
                         'anstellungsart' => $sn['anstellungsart'] ?? '',
                         'vertragsart' => $sn['vertragsart'] ?? '',
                         'zeitmodell' => $sn['zeitmodell'] ?? '',
@@ -176,6 +182,43 @@ final class SnapshotService
         }
 
         return ['neu' => $neu, 'aktualisiert' => $aktualisiert];
+    }
+
+    /**
+     * Wie ApiImporter-Upsert: nicht-leeres einrichtung / fachbereich_intern in der DB von API-Strings schützen.
+     *
+     * @param array<string, mixed>|null $existing
+     * @param array<string, mixed> $sn
+     * @return array{einrichtung: string, fachbereich_intern: ?string}
+     */
+    private function mergeGeschuetzteAusschreibungFelder(?array $existing, array $sn): array
+    {
+        $einApi = isset($sn['einrichtung']) && is_string($sn['einrichtung']) ? $sn['einrichtung'] : '';
+        $fbiApi = array_key_exists('fachbereich_intern', $sn) ? $sn['fachbereich_intern'] : null;
+        if ($fbiApi !== null && $fbiApi !== '' && is_string($fbiApi)) {
+            $fbiApi = trim($fbiApi);
+            if ($fbiApi === '') {
+                $fbiApi = null;
+            }
+        } elseif ($fbiApi !== null && !is_string($fbiApi)) {
+            $fbiApi = null;
+        }
+
+        $einFinal = $einApi;
+        $fbiFinal = $fbiApi;
+
+        if ($existing !== null) {
+            $einDb = trim((string) ($existing['einrichtung'] ?? ''));
+            if ($einDb !== '') {
+                $einFinal = $einDb;
+            }
+            $fbiDb = $existing['fachbereich_intern'] ?? null;
+            if ($fbiDb !== null && trim((string) $fbiDb) !== '') {
+                $fbiFinal = trim((string) $fbiDb);
+            }
+        }
+
+        return ['einrichtung' => $einFinal, 'fachbereich_intern' => $fbiFinal];
     }
 
     /**

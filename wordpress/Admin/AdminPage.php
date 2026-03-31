@@ -11,6 +11,12 @@ use BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenExportOptions;
 use BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenFilterInput;
 use BS_Awo_Jobs_Statistik\AktiveStellen\AktiveStellenQuery;
 use BS_Awo_Jobs_Statistik\Analysis\FluktuationAnalyzer;
+use BS_Awo_Jobs_Statistik\EinrichtungenStamm\EinrichtungenAuswertungService;
+use BS_Awo_Jobs_Statistik\EinrichtungenStamm\EinrichtungenMatching;
+use BS_Awo_Jobs_Statistik\EinrichtungenStamm\EinrichtungenStammCluster;
+use BS_Awo_Jobs_Statistik\EinrichtungenStamm\EinrichtungenStammFilterInput;
+use BS_Awo_Jobs_Statistik\EinrichtungenStamm\EinrichtungenStammRepository;
+use BS_Awo_Jobs_Statistik\EinrichtungenStamm\EinrichtungenStammSollVza;
 use BS_Awo_Jobs_Statistik\Analysis\VakanzAnalyzer;
 use BS_Awo_Jobs_Statistik\Analysis\VzaCalculator;
 use BS_Awo_Jobs_Statistik\Core\Database;
@@ -24,6 +30,7 @@ final class AdminPage
     public const PAGE_DASHBOARD = 'bs-awo-jobs-statistik';
     public const PAGE_IMPORT = 'bs-awo-jobs-import';
     public const PAGE_LOGISCHE = 'bs-awo-jobs-logische';
+    public const PAGE_EINRICHTUNGEN = 'bs-awo-jobs-einrichtungen';
     public const PAGE_EINSTELLUNGEN = 'bs-awo-jobs-einstellungen';
 
     /** @var \wpdb */
@@ -50,12 +57,14 @@ final class AdminPage
         add_submenu_page(self::MENU_SLUG, __('Dashboard', 'bs-awo-jobs-statistik'), __('Dashboard', 'bs-awo-jobs-statistik'), 'manage_options', self::PAGE_DASHBOARD, [$this, 'renderDashboard']);
         add_submenu_page(self::MENU_SLUG, __('Import', 'bs-awo-jobs-statistik'), __('Import', 'bs-awo-jobs-statistik'), 'manage_options', self::PAGE_IMPORT, [$this, 'renderImport']);
         add_submenu_page(self::MENU_SLUG, __('Logische Stellen', 'bs-awo-jobs-statistik'), __('Logische Stellen', 'bs-awo-jobs-statistik'), 'manage_options', self::PAGE_LOGISCHE, [$this, 'renderLogischeStellen']);
+        add_submenu_page(self::MENU_SLUG, __('Stammdaten Einrichtungen', 'bs-awo-jobs-statistik'), __('Stammdaten Einrichtungen', 'bs-awo-jobs-statistik'), 'manage_options', self::PAGE_EINRICHTUNGEN, [$this, 'renderEinrichtungenStamm']);
         add_submenu_page(self::MENU_SLUG, __('Einstellungen', 'bs-awo-jobs-statistik'), __('Einstellungen', 'bs-awo-jobs-statistik'), 'manage_options', self::PAGE_EINSTELLUNGEN, [$this, 'renderEinstellungen']);
     }
     
     public function handleAdminActions(): void
     {
         $this->maybeHandleAktiveStellenToggle();
+        $this->maybeHandleEinrichtungStammPost();
     }
 
     public function renderDashboard(): void
@@ -64,7 +73,7 @@ final class AdminPage
         $vollzeit = (int) ($this->wpdb->get_var($this->wpdb->prepare("SELECT wert FROM {$tblConfig} WHERE schluessel = %s", 'vollzeit_stunden')) ?: 39);
 
         $activeTab = sanitize_key($_GET['bs_tab'] ?? 'aktive_stellen');
-        $tabs = ['uebersicht', 'aktive_stellen', 'charts', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz'];
+        $tabs = ['uebersicht', 'aktive_stellen', 'einrichtung_auswertung', 'charts', 'fluktuation', 'vakanzen', 'fachbereiche', 'plz'];
         if (!in_array($activeTab, $tabs, true)) {
             $activeTab = 'aktive_stellen';
         }
@@ -95,6 +104,11 @@ final class AdminPage
         $aktiveStellenFiltered = [];
         $aktiveGesamtAnzahl = 0;
         $aktiveGesamtVza = 0.0;
+        $evaRows = [];
+        $evaFilter = new EinrichtungenStammFilterInput();
+        $evaEinrichtungOptions = [];
+        $evaFbOptions = [];
+        $evaMandantOptions = [];
 
         switch ($activeTab) {
             case 'aktive_stellen':
@@ -161,6 +175,28 @@ final class AdminPage
                 }
                 break;
 
+            case 'einrichtung_auswertung':
+                $repoEva = new EinrichtungenStammRepository($this->wpdb);
+                $evaEinrichtungOptions = $repoEva->mergedEinrichtungOptions();
+                $evaFbOptions = $repoEva->mergedFachbereichBoerseOptions();
+                $evaMandantOptions = $repoEva->mergedMandantenfeldOptions();
+                $evaQ = isset($_GET['bs_eva_q']) ? sanitize_text_field(wp_unslash($_GET['bs_eva_q'])) : '';
+                $evaFb = isset($_GET['bs_eva_fb']) ? sanitize_text_field(wp_unslash($_GET['bs_eva_fb'])) : '';
+                $evaFbi = isset($_GET['bs_eva_fbi']) ? sanitize_text_field(wp_unslash($_GET['bs_eva_fbi'])) : '';
+                $evaEinr = isset($_GET['bs_eva_einr']) ? sanitize_text_field(wp_unslash($_GET['bs_eva_einr'])) : '';
+                if (isset($_GET['bs_eva_aktiv'])) {
+                    $evaAktiv = sanitize_key(wp_unslash($_GET['bs_eva_aktiv']));
+                    if ($evaAktiv !== '' && $evaAktiv !== '1' && $evaAktiv !== '0') {
+                        $evaAktiv = '';
+                    }
+                } else {
+                    $evaAktiv = '1';
+                }
+                $evaFilter = new EinrichtungenStammFilterInput($evaQ, $evaFb, $evaFbi, $evaAktiv, $evaEinr, '');
+                $svc = new EinrichtungenAuswertungService($this->wpdb, $vollzeit);
+                $evaRows = $svc->buildAuswertungRows($evaFilter);
+                break;
+
             case 'charts':
                 $vza = new VzaCalculator($this->wpdb, $vollzeit);
                 $aktuell = $vza->berechneAktuell();
@@ -224,6 +260,7 @@ final class AdminPage
 
             <nav class="nav-tab-wrapper wp-clearfix" style="margin-bottom:0;">
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=aktive_stellen" class="nav-tab <?php echo $activeTab === 'aktive_stellen' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Aktive Stellen', 'bs-awo-jobs-statistik'); ?></a>
+                <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=einrichtung_auswertung" class="nav-tab <?php echo $activeTab === 'einrichtung_auswertung' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Soll / Offen / Besetzt', 'bs-awo-jobs-statistik'); ?></a>
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=charts" class="nav-tab <?php echo $activeTab === 'charts' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Charts', 'bs-awo-jobs-statistik'); ?></a>
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=fluktuation" class="nav-tab <?php echo $activeTab === 'fluktuation' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Fluktuation', 'bs-awo-jobs-statistik'); ?></a>
                 <a href="?page=<?php echo esc_attr(self::PAGE_DASHBOARD); ?>&bs_tab=fachbereiche" class="nav-tab <?php echo $activeTab === 'fachbereiche' ? 'nav-tab-active' : ''; ?>"><?php echo esc_html__('Fachbereiche', 'bs-awo-jobs-statistik'); ?></a>
@@ -695,6 +732,95 @@ final class AdminPage
                 <?php endif; ?>
             <?php endif; ?>
 
+            <?php if ($activeTab === 'einrichtung_auswertung'): ?>
+                <h2><?php echo esc_html__('Einrichtungen: Soll-VZÄ, offene VZÄ, besetzte VZÄ', 'bs-awo-jobs-statistik'); ?></h2>
+                <p class="description"><?php echo esc_html__('Anzeige pro kanonischer Master-Einrichtung: Soll-VZÄ nur aus dem Master-Stammdatensatz. Offene VZÄ summieren alle berücksichtigten aktiven Stellen, deren Einrichtungsname zu diesem Master oder einem zugeordneten Alias-Datensatz passt (gleicher Name bzw. gleicher Match-Key). Besetzt = Soll − Offen. VZÄ-Berechnung wie in „Aktive Stellen“.', 'bs-awo-jobs-statistik'); ?></p>
+
+                <form method="get" style="margin:1rem 0 1.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem;align-items:end;">
+                    <input type="hidden" name="page" value="<?php echo esc_attr(self::PAGE_DASHBOARD); ?>">
+                    <input type="hidden" name="bs_tab" value="einrichtung_auswertung">
+
+                    <label>
+                        <?php echo esc_html__('Suche', 'bs-awo-jobs-statistik'); ?><br>
+                        <input type="text" name="bs_eva_q" value="<?php echo esc_attr($evaFilter->q); ?>" placeholder="<?php echo esc_attr__('Name, Mandantenfeld, Bemerkung …', 'bs-awo-jobs-statistik'); ?>" style="width:100%;">
+                    </label>
+
+                    <label>
+                        <?php echo esc_html__('Fachbereich (Stellenbörse)', 'bs-awo-jobs-statistik'); ?><br>
+                        <select name="bs_eva_fb" style="width:100%;">
+                            <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                            <?php foreach ($evaFbOptions as $fb): ?>
+                                <option value="<?php echo esc_attr($fb); ?>" <?php selected($evaFilter->fachbereichBoerse, $fb); ?>><?php echo esc_html($fb); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+
+                    <label>
+                        <?php echo esc_html__('Mandantenfeld', 'bs-awo-jobs-statistik'); ?><br>
+                        <select name="bs_eva_fbi" style="width:100%;">
+                            <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                            <?php foreach ($evaMandantOptions as $fbi): ?>
+                                <option value="<?php echo esc_attr($fbi); ?>" <?php selected($evaFilter->mandantenfeld, $fbi); ?>><?php echo esc_html($fbi); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+
+                    <label>
+                        <?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?><br>
+                        <select name="bs_eva_einr" style="width:100%;">
+                            <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                            <?php foreach ($evaEinrichtungOptions as $en): ?>
+                                <option value="<?php echo esc_attr($en); ?>" <?php selected($evaFilter->einrichtung, $en); ?>><?php echo esc_html($en); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+
+                    <label>
+                        <?php echo esc_html__('Stammdaten: Aktiv', 'bs-awo-jobs-statistik'); ?><br>
+                        <select name="bs_eva_aktiv" style="width:100%;">
+                            <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                            <option value="1" <?php selected($evaFilter->aktiv, '1'); ?>><?php echo esc_html__('Aktiv', 'bs-awo-jobs-statistik'); ?></option>
+                            <option value="0" <?php selected($evaFilter->aktiv, '0'); ?>><?php echo esc_html__('Inaktiv', 'bs-awo-jobs-statistik'); ?></option>
+                        </select>
+                    </label>
+
+                    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                        <button type="submit" class="button button-primary"><?php echo esc_html__('Filtern', 'bs-awo-jobs-statistik'); ?></button>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=' . self::PAGE_DASHBOARD . '&bs_tab=einrichtung_auswertung')); ?>" class="button"><?php echo esc_html__('Zurücksetzen', 'bs-awo-jobs-statistik'); ?></a>
+                    </div>
+                </form>
+
+                <table class="widefat striped">
+                    <thead>
+                    <tr>
+                        <th><?php echo esc_html__('Einrichtung (Master)', 'bs-awo-jobs-statistik'); ?></th>
+                        <th><?php echo esc_html__('Fachbereich Börse', 'bs-awo-jobs-statistik'); ?></th>
+                        <th><?php echo esc_html__('Mandantenfeld', 'bs-awo-jobs-statistik'); ?></th>
+                        <th><?php echo esc_html__('Stamm-Aliase', 'bs-awo-jobs-statistik'); ?></th>
+                        <th><?php echo esc_html__('Soll-VZÄ', 'bs-awo-jobs-statistik'); ?></th>
+                        <th><?php echo esc_html__('Offene VZÄ', 'bs-awo-jobs-statistik'); ?></th>
+                        <th><?php echo esc_html__('Besetzte VZÄ', 'bs-awo-jobs-statistik'); ?></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($evaRows as $er): ?>
+                        <tr>
+                            <td><strong><?php echo esc_html((string) ($er['einrichtung'] ?? '')); ?></strong></td>
+                            <td><?php echo esc_html((string) ($er['fachbereich_boerse'] ?? '')); ?></td>
+                            <td><?php echo esc_html((string) ($er['fachbereich_intern'] ?? '–')); ?></td>
+                            <td><?php echo esc_html((string) (int) ($er['kanonisch_alias_anzahl'] ?? 0)); ?></td>
+                            <td><?php echo esc_html(number_format((float) ($er['soll_vza_effektiv'] ?? 0), 2, ',', '.')); ?></td>
+                            <td><?php echo esc_html(number_format((float) ($er['offen_vza'] ?? 0), 2, ',', '.')); ?></td>
+                            <td><?php echo esc_html(number_format((float) ($er['besetzt_vza'] ?? 0), 2, ',', '.')); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php if ($evaRows === []): ?>
+                        <tr><td colspan="7"><?php echo esc_html__('Keine Einrichtungen für den aktuellen Filter.', 'bs-awo-jobs-statistik'); ?></td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+
             </div>
         </div>
         <?php
@@ -1006,5 +1132,704 @@ final class AdminPage
     {
         $settings = new SettingsPage($this->wpdb);
         $settings->render();
+    }
+
+    public function renderEinrichtungenStamm(): void
+    {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        $repo = new EinrichtungenStammRepository($this->wpdb);
+
+        $notice = isset($_GET['bs_awo_notice']) ? sanitize_key((string) $_GET['bs_awo_notice']) : '';
+        if ($notice === 'saved') {
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Stammdaten gespeichert.', 'bs-awo-jobs-statistik') . '</p></div>';
+        } elseif ($notice === 'seeded') {
+            $neu = isset($_GET['bs_awo_notice_neu']) ? (int) $_GET['bs_awo_notice_neu'] : 0;
+            $bereits = isset($_GET['bs_awo_notice_bereits']) ? (int) $_GET['bs_awo_notice_bereits'] : 0;
+            $pruef = isset($_GET['bs_awo_notice_pruef']) ? (int) $_GET['bs_awo_notice_pruef'] : 0;
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html(sprintf(
+                /* translators: 1: neue Zeilen gesamt, 2: ohne Insert zugeordnet, 3: Prüffälle (Teilmenge von 1) */
+                __('Übernahme abgeschlossen: %1$d neue Zeilen angelegt (davon %3$d Prüffälle). %2$d Einrichtungen waren bereits eindeutig zugeordnet (nur „Letzter API-Name“/Zeitstempel aktualisiert).', 'bs-awo-jobs-statistik'),
+                $neu,
+                $bereits,
+                $pruef
+            )) . '</p></div>';
+        } elseif ($notice === 'duplicate_exact' || $notice === 'duplicate_normalized') {
+            $cid = isset($_GET['bs_awo_conflict_id']) ? (int) $_GET['bs_awo_conflict_id'] : 0;
+            $other = $cid > 0 ? $repo->getById($cid) : null;
+            $fremdName = $other ? (string) ($other['einrichtung'] ?? '') : '';
+            if ($notice === 'duplicate_exact') {
+                $msg = sprintf(
+                    /* translators: 1: ID, 2: existing facility name */
+                    __('Speichern abgebrochen: Es gibt bereits eine Einrichtung mit genau diesem Namen (Datensatz %1$d: %2$s).', 'bs-awo-jobs-statistik'),
+                    $cid,
+                    $fremdName !== '' ? $fremdName : '–'
+                );
+            } else {
+                $msg = sprintf(
+                    /* translators: 1: ID, 2: existing facility name */
+                    __('Speichern abgebrochen: Es gibt bereits eine Einrichtung mit demselben normalisierten Schlüssel (wie bei Matching/Übernahme). Bestehender Datensatz %1$d: %2$s. Bitte diesen Datensatz bearbeiten oder den Namen fachlich eindeutig machen. Es wird nichts zusammengeführt und keine Dublette angelegt.', 'bs-awo-jobs-statistik'),
+                    $cid,
+                    $fremdName !== '' ? $fremdName : '–'
+                );
+            }
+            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html($msg) . '</p></div>';
+        } elseif ($notice === 'master_invalid') {
+            $detail = isset($_GET['bs_awo_master_msg']) ? sanitize_text_field(wp_unslash(rawurldecode((string) $_GET['bs_awo_master_msg']))) : '';
+            $msg = $detail !== '' ? $detail : __('Die Master-Zuordnung konnte nicht gespeichert werden.', 'bs-awo-jobs-statistik');
+            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html($msg) . '</p></div>';
+        }
+
+        $editId = isset($_GET['bs_es_edit']) ? (int) $_GET['bs_es_edit'] : 0;
+
+        $esView = isset($_GET['bs_es_view']) ? sanitize_key(wp_unslash((string) $_GET['bs_es_view'])) : '';
+        if ($esView !== '' && $esView !== 'alle') {
+            $esView = '';
+        }
+        $esListenModus = ($esView === 'alle') ? '' : 'wurzel';
+
+        $filter = new EinrichtungenStammFilterInput(
+            isset($_GET['bs_es_q']) ? sanitize_text_field(wp_unslash($_GET['bs_es_q'])) : '',
+            isset($_GET['bs_es_fb']) ? sanitize_text_field(wp_unslash($_GET['bs_es_fb'])) : '',
+            isset($_GET['bs_es_fbi']) ? sanitize_text_field(wp_unslash($_GET['bs_es_fbi'])) : '',
+            isset($_GET['bs_es_aktiv']) ? sanitize_key(wp_unslash($_GET['bs_es_aktiv'])) : '',
+            isset($_GET['bs_es_einr']) ? sanitize_text_field(wp_unslash($_GET['bs_es_einr'])) : '',
+            isset($_GET['bs_es_pruef']) ? sanitize_key(wp_unslash($_GET['bs_es_pruef'])) : '',
+            $esListenModus
+        );
+        if ($filter->aktiv !== '' && $filter->aktiv !== '1' && $filter->aktiv !== '0') {
+            $filter = new EinrichtungenStammFilterInput(
+                $filter->q,
+                $filter->fachbereichBoerse,
+                $filter->mandantenfeld,
+                '',
+                $filter->einrichtung,
+                $filter->pruefstatus,
+                $filter->listenModus
+            );
+        }
+        if ($filter->pruefstatus !== '' && !in_array($filter->pruefstatus, [EinrichtungenMatching::PRUEFSTATUS_OK, EinrichtungenMatching::PRUEFSTATUS_PRUEFEN], true)) {
+            $filter = new EinrichtungenStammFilterInput(
+                $filter->q,
+                $filter->fachbereichBoerse,
+                $filter->mandantenfeld,
+                $filter->aktiv,
+                $filter->einrichtung,
+                '',
+                $filter->listenModus
+            );
+        }
+
+        $mandantenOptions = $repo->mergedMandantenfeldOptions();
+        $fbBoerseOptions = $repo->mergedFachbereichBoerseOptions();
+        $einrichtungOptionsStamm = $filter->listenModus === 'wurzel'
+            ? $repo->mergedEinrichtungOptionsFuerMasterliste()
+            : $repo->mergedEinrichtungOptions();
+
+        $filterQueryBase = [
+            'page' => self::PAGE_EINRICHTUNGEN,
+        ];
+        if ($esView === 'alle') {
+            $filterQueryBase['bs_es_view'] = 'alle';
+        }
+        foreach (['bs_es_q', 'bs_es_fb', 'bs_es_fbi', 'bs_es_aktiv', 'bs_es_einr', 'bs_es_pruef'] as $p) {
+            if ($p === 'bs_es_q') {
+                $val = $filter->q;
+            } elseif ($p === 'bs_es_fb') {
+                $val = $filter->fachbereichBoerse;
+            } elseif ($p === 'bs_es_fbi') {
+                $val = $filter->mandantenfeld;
+            } elseif ($p === 'bs_es_einr') {
+                $val = $filter->einrichtung;
+            } elseif ($p === 'bs_es_pruef') {
+                $val = $filter->pruefstatus;
+            } else {
+                $val = $filter->aktiv;
+            }
+            if ($val !== '') {
+                $filterQueryBase[$p] = $val;
+            }
+        }
+
+        if ($editId > 0) {
+            $row = $repo->getById($editId);
+            if (!$row) {
+                echo '<div class="wrap"><div class="notice notice-error"><p>' . esc_html__('Eintrag nicht gefunden.', 'bs-awo-jobs-statistik') . '</p></div></div>';
+
+                return;
+            }
+            ?>
+            <div class="wrap bs-awo-statistik-dashboard">
+                <h1><?php echo esc_html__('Einrichtung bearbeiten', 'bs-awo-jobs-statistik'); ?></h1>
+                <p>
+                    <a href="<?php echo esc_url(add_query_arg($filterQueryBase, admin_url('admin.php'))); ?>" class="button"><?php echo esc_html__('Zurück zur Liste', 'bs-awo-jobs-statistik'); ?></a>
+                </p>
+                <?php $this->renderEinrichtungStammForm($row, $filterQueryBase, $repo); ?>
+            </div>
+            <?php
+
+            return;
+        }
+
+        if (isset($_GET['bs_es_new']) && $_GET['bs_es_new'] === '1') {
+            ?>
+            <div class="wrap bs-awo-statistik-dashboard">
+                <h1><?php echo esc_html__('Neue Einrichtung', 'bs-awo-jobs-statistik'); ?></h1>
+                <p>
+                    <a href="<?php echo esc_url(add_query_arg($filterQueryBase, admin_url('admin.php'))); ?>" class="button"><?php echo esc_html__('Zurück zur Liste', 'bs-awo-jobs-statistik'); ?></a>
+                </p>
+                <?php $this->renderEinrichtungStammForm(null, $filterQueryBase, $repo); ?>
+            </div>
+            <?php
+
+            return;
+        }
+
+        $rows = $repo->fetchFiltered($filter);
+        $allStammForZuordnung = $repo->fetchAllOrdered();
+        $idMapZuordnung = EinrichtungenStammCluster::idMap($allStammForZuordnung);
+        ?>
+        <div class="wrap bs-awo-statistik-dashboard">
+            <h1><?php echo esc_html__('Stammdaten Einrichtungen', 'bs-awo-jobs-statistik'); ?></h1>
+            <p class="description"><?php echo esc_html__('Masterliste: eine Zeile pro realem Standort (nur eigenständige Einrichtungen). Falsch geschriebene Namen aus der API landen nach Seed ggf. als eigener Datensatz — bitte unter „Bearbeiten“ beim Alias „Gehört zu (Master)“ auf die bestehende Einrichtung setzen; technisch bleibt ein Alias-Datensatz bestehen, in der Masterliste sehen Sie ihn nicht. Ansicht „Alle Datensätze“ zeigt Aliase zur Kontrolle.', 'bs-awo-jobs-statistik'); ?></p>
+
+            <div class="card" style="padding:1rem;margin:1rem 0;max-width:920px;">
+                <h2 style="margin-top:0;"><?php echo esc_html__('Fehlende Einrichtungen aus Ausschreibungen anlegen', 'bs-awo-jobs-statistik'); ?></h2>
+                <p class="description"><?php echo esc_html__('Matching: gleicher normalisierter Name → keine Dublette; „Letzter API-Name“, Zeitstempel und der Match-Key aus dem Stammnamen werden gepflegt. Weicht der aggregierte API-Name oder ein Fachbereich/Mandantenfeld vom Stammsatz ab, bleibt der Stamm unverändert, es entsteht ein Prüffall mit Hinweisblock. Vermutlich ähnliche Namen erzeugen sichtbare Dubletten-Prüffälle (kein automatisches Zusammenführen). Klar neue Namen werden normal angelegt. Soll-/Bemerkungsfelder der Stammzeile bleiben unangetastet.', 'bs-awo-jobs-statistik'); ?></p>
+                <form method="post">
+                    <?php wp_nonce_field('bs_awo_einrichtung_seed', 'bs_awo_einrichtung_seed_nonce'); ?>
+                    <input type="hidden" name="bs_awo_action" value="einrichtung_seed">
+                    <?php foreach ($filterQueryBase as $k => $v): ?>
+                        <?php if ($k !== 'page'): ?>
+                            <input type="hidden" name="filter_ret_<?php echo esc_attr($k); ?>" value="<?php echo esc_attr((string) $v); ?>">
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                    <?php submit_button(__('Jetzt übernehmen', 'bs-awo-jobs-statistik'), 'secondary'); ?>
+                </form>
+            </div>
+
+            <form method="get" style="margin:1rem 0 1.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem;align-items:end;">
+                <input type="hidden" name="page" value="<?php echo esc_attr(self::PAGE_EINRICHTUNGEN); ?>">
+
+                <label>
+                    <?php echo esc_html__('Suche', 'bs-awo-jobs-statistik'); ?><br>
+                    <input type="text" name="bs_es_q" value="<?php echo esc_attr($filter->q); ?>" placeholder="<?php echo esc_attr__('Name, Mandantenfeld, Bemerkung …', 'bs-awo-jobs-statistik'); ?>" style="width:100%;">
+                </label>
+
+                <label>
+                    <?php echo esc_html__('Fachbereich (Stellenbörse)', 'bs-awo-jobs-statistik'); ?><br>
+                    <select name="bs_es_fb" style="width:100%;">
+                        <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                        <?php foreach ($fbBoerseOptions as $fb): ?>
+                            <option value="<?php echo esc_attr($fb); ?>" <?php selected($filter->fachbereichBoerse, $fb); ?>><?php echo esc_html($fb); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+
+                <label>
+                    <?php echo esc_html__('Mandantenfeld', 'bs-awo-jobs-statistik'); ?><br>
+                    <select name="bs_es_fbi" style="width:100%;">
+                        <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                        <?php foreach ($mandantenOptions as $fbi): ?>
+                            <option value="<?php echo esc_attr($fbi); ?>" <?php selected($filter->mandantenfeld, $fbi); ?>><?php echo esc_html($fbi); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+
+                <label>
+                    <?php echo esc_html__('Status', 'bs-awo-jobs-statistik'); ?><br>
+                    <select name="bs_es_aktiv" style="width:100%;">
+                        <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                        <option value="1" <?php selected($filter->aktiv, '1'); ?>><?php echo esc_html__('Aktiv', 'bs-awo-jobs-statistik'); ?></option>
+                        <option value="0" <?php selected($filter->aktiv, '0'); ?>><?php echo esc_html__('Inaktiv', 'bs-awo-jobs-statistik'); ?></option>
+                    </select>
+                </label>
+
+                <label>
+                    <?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?><br>
+                    <select name="bs_es_einr" style="width:100%;">
+                        <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                        <?php foreach ($einrichtungOptionsStamm as $en): ?>
+                            <option value="<?php echo esc_attr($en); ?>" <?php selected($filter->einrichtung, $en); ?>><?php echo esc_html($en); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+
+                <label>
+                    <?php echo esc_html__('Ansicht', 'bs-awo-jobs-statistik'); ?><br>
+                    <select name="bs_es_view" style="width:100%;">
+                        <option value="" <?php selected($esView, ''); ?>><?php echo esc_html__('Masterliste (eine Zeile pro Einrichtung)', 'bs-awo-jobs-statistik'); ?></option>
+                        <option value="alle" <?php selected($esView, 'alle'); ?>><?php echo esc_html__('Alle Datensätze (inkl. Aliase)', 'bs-awo-jobs-statistik'); ?></option>
+                    </select>
+                </label>
+
+                <label>
+                    <?php echo esc_html__('Prüfstatus', 'bs-awo-jobs-statistik'); ?><br>
+                    <select name="bs_es_pruef" style="width:100%;">
+                        <option value=""><?php echo esc_html__('Alle', 'bs-awo-jobs-statistik'); ?></option>
+                        <option value="<?php echo esc_attr(EinrichtungenMatching::PRUEFSTATUS_OK); ?>" <?php selected($filter->pruefstatus, EinrichtungenMatching::PRUEFSTATUS_OK); ?>><?php echo esc_html__('OK', 'bs-awo-jobs-statistik'); ?></option>
+                        <option value="<?php echo esc_attr(EinrichtungenMatching::PRUEFSTATUS_PRUEFEN); ?>" <?php selected($filter->pruefstatus, EinrichtungenMatching::PRUEFSTATUS_PRUEFEN); ?>><?php echo esc_html__('Zu prüfen', 'bs-awo-jobs-statistik'); ?></option>
+                    </select>
+                </label>
+
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <button type="submit" class="button button-primary"><?php echo esc_html__('Filtern', 'bs-awo-jobs-statistik'); ?></button>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=' . self::PAGE_EINRICHTUNGEN)); ?>" class="button"><?php echo esc_html__('Zurücksetzen', 'bs-awo-jobs-statistik'); ?></a>
+                    <a href="<?php echo esc_url(add_query_arg(array_merge($filterQueryBase, ['bs_es_new' => '1']), admin_url('admin.php'))); ?>" class="button button-primary"><?php echo esc_html__('Neue Einrichtung', 'bs-awo-jobs-statistik'); ?></a>
+                </div>
+            </form>
+
+            <table class="widefat striped">
+                <thead>
+                <tr>
+                    <th><?php echo esc_html__('Einrichtung', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Master / Aliase', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Letzter API-Name', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Fachbereich Börse', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Mandantenfeld', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Aktiv', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Gesamt-VZÄ (Soll)', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Prüfstatus', 'bs-awo-jobs-statistik'); ?></th>
+                    <th><?php echo esc_html__('Aktion', 'bs-awo-jobs-statistik'); ?></th>
+                </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($rows as $r): ?>
+                    <tr>
+                        <td><strong><?php echo esc_html((string) ($r['einrichtung'] ?? '')); ?></strong></td>
+                        <td>
+                            <?php
+                            $rid = (int) ($r['id'] ?? 0);
+                            $mId = (int) ($r['master_einrichtung_id'] ?? 0);
+                            if ($mId > 0) {
+                                $mRow = $idMapZuordnung[$mId] ?? null;
+                                $mLabel = $mRow ? sprintf(
+                                    /* translators: 1: master facility name, 2: master id */
+                                    __('Alias von → %1$s (ID %2$d)', 'bs-awo-jobs-statistik'),
+                                    (string) ($mRow['einrichtung'] ?? ''),
+                                    $mId
+                                ) : sprintf(
+                                    /* translators: %d: master id */
+                                    __('Alias von Master-ID %d', 'bs-awo-jobs-statistik'),
+                                    $mId
+                                );
+                                echo '<span class="description">' . esc_html($mLabel) . '</span>';
+                            } else {
+                                $nA = $repo->countDirectAliases($rid);
+                                if ($nA > 0) {
+                                    echo '<mark>' . esc_html(
+                                        sprintf(
+                                            /* translators: %d: number of alias records */
+                                            __('Master (%d Aliase)', 'bs-awo-jobs-statistik'),
+                                            $nA
+                                        )
+                                    ) . '</mark>';
+                                } else {
+                                    echo '<span class="description">' . esc_html__('Eigenständig', 'bs-awo-jobs-statistik') . '</span>';
+                                }
+                            }
+                            ?>
+                        </td>
+                        <td>
+                            <?php
+                            $apiName = trim((string) ($r['letzter_api_name'] ?? ''));
+                            if ($apiName !== '') {
+                                if (mb_strlen($apiName, 'UTF-8') > 48) {
+                                    echo '<span title="' . esc_attr($apiName) . '">';
+                                    echo esc_html(mb_substr($apiName, 0, 45, 'UTF-8') . '…');
+                                    echo '</span>';
+                                } else {
+                                    echo esc_html($apiName);
+                                }
+                            } else {
+                                echo '<span class="description">–</span>';
+                            }
+                            ?>
+                        </td>
+                        <td><?php echo esc_html((string) ($r['fachbereich_boerse'] ?? '')); ?></td>
+                        <td><?php echo esc_html((string) ($r['fachbereich_intern'] ?? '–')); ?></td>
+                        <td><?php echo !empty($r['aktiv']) ? esc_html__('Ja', 'bs-awo-jobs-statistik') : esc_html__('Nein', 'bs-awo-jobs-statistik'); ?></td>
+                        <td>
+                            <?php
+                            $eg = EinrichtungenStammSollVza::effectiveGesamt($r);
+                            $auto = !EinrichtungenStammSollVza::nutztManuellenGesamtwert($r);
+                            echo esc_html(number_format($eg, 2, ',', '.'));
+                            echo ' ';
+                            if ($auto) {
+                                echo '<span class="description">(' . esc_html__('auto', 'bs-awo-jobs-statistik') . ')</span>';
+                            } else {
+                                echo '<span class="description">(' . esc_html__('manuell', 'bs-awo-jobs-statistik') . ')</span>';
+                            }
+                            ?>
+                        </td>
+                        <td>
+                            <?php
+                            $ps = (string) ($r['pruefstatus'] ?? EinrichtungenMatching::PRUEFSTATUS_OK);
+                            if ($ps === EinrichtungenMatching::PRUEFSTATUS_PRUEFEN) {
+                                echo '<mark>' . esc_html__('Zu prüfen', 'bs-awo-jobs-statistik') . '</mark>';
+                                $phi = trim((string) ($r['pruef_hinweis'] ?? ''));
+                                if ($phi !== '') {
+                                    $short = preg_replace('/\s+/u', ' ', $phi);
+                                    if ($short !== null && mb_strlen($short, 'UTF-8') > 140) {
+                                        $short = mb_substr((string) $short, 0, 137, 'UTF-8') . '…';
+                                    }
+                                    echo '<div class="description" style="margin-top:0.35em;max-width:22em;">' . esc_html((string) $short) . '</div>';
+                                }
+                            } else {
+                                echo esc_html__('OK', 'bs-awo-jobs-statistik');
+                            }
+                            ?>
+                        </td>
+                        <td>
+                            <a href="<?php echo esc_url(add_query_arg(array_merge($filterQueryBase, ['bs_es_edit' => (int) ($r['id'] ?? 0)]), admin_url('admin.php'))); ?>" class="button button-small"><?php echo esc_html__('Bearbeiten', 'bs-awo-jobs-statistik'); ?></a>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if ($rows === []): ?>
+                    <tr><td colspan="9"><?php echo esc_html__('Keine Einträge (oder keine Treffer mit aktuellem Filter).', 'bs-awo-jobs-statistik'); ?></td></tr>
+                <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php
+    }
+
+    /**
+     * @param array<string, mixed>|null $row null = neuer Datensatz
+     * @param array<string, string|int> $filterQueryBase
+     */
+    private function renderEinrichtungStammForm(?array $row, array $filterQueryBase, EinrichtungenStammRepository $repo): void
+    {
+        $id = $row ? (int) ($row['id'] ?? 0) : 0;
+        $einrichtung = $row ? (string) ($row['einrichtung'] ?? '') : '';
+        $fbb = $row ? (string) ($row['fachbereich_boerse'] ?? '') : '';
+        $fbi = $row ? (string) ($row['fachbereich_intern'] ?? '') : '';
+        $aktiv = $row ? (int) ($row['aktiv'] ?? 1) : 1;
+        $bem = $row ? (string) ($row['bemerkung'] ?? '') : '';
+        $s = static function ($k) use ($row): string {
+            if (!$row || !isset($row[$k]) || $row[$k] === null || $row[$k] === '') {
+                return '';
+            }
+
+            return (string) $row[$k];
+        };
+        ?>
+        <form method="post" class="card" style="max-width:720px;padding:1.5rem;">
+            <?php wp_nonce_field('bs_awo_einrichtung_save', 'bs_awo_einrichtung_save_nonce'); ?>
+            <input type="hidden" name="bs_awo_action" value="einrichtung_save">
+            <input type="hidden" name="einrichtung_id" value="<?php echo esc_attr((string) $id); ?>">
+            <?php foreach ($filterQueryBase as $k => $v): ?>
+                <?php if ($k !== 'page' && $k !== 'bs_es_edit' && $k !== 'bs_es_new'): ?>
+                    <input type="hidden" name="filter_ret_<?php echo esc_attr($k); ?>" value="<?php echo esc_attr((string) $v); ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+
+            <table class="form-table" role="presentation">
+                <tr>
+                    <th scope="row"><label for="bs_es_f_einr"><?php echo esc_html__('Einrichtungsname', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td><input name="einrichtung" id="bs_es_f_einr" type="text" class="regular-text" value="<?php echo esc_attr($einrichtung); ?>" required></td>
+                </tr>
+                <?php if ($row) : ?>
+                    <?php
+                    $aliasUnterMir = $repo->countDirectAliases($id);
+                    $masterKandidaten = $repo->fetchRootMasterKandidatenFuerSelect($id);
+                    $masterAktuell = (int) ($row['master_einrichtung_id'] ?? 0);
+                    ?>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_master"><?php echo esc_html__('Gehört zu (Master)', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td>
+                        <?php if ($aliasUnterMir > 0) : ?>
+                            <input type="hidden" name="master_einrichtung_id" value="<?php echo $masterAktuell > 0 ? esc_attr((string) $masterAktuell) : ''; ?>">
+                            <p class="description"><?php echo esc_html(sprintf(
+                                /* translators: %d: number of facilities that point to this record as master */
+                                __('Dieser Datensatz ist %d weiterer Einrichtung(en) in Stammdaten als Master zugeordnet. Eine Alias-Zuordnung an einen anderen Master ist dafür gesperrt (zuerst andere Datensätze umhängen).', 'bs-awo-jobs-statistik'),
+                                $aliasUnterMir
+                            )); ?></p>
+                        <?php else : ?>
+                            <select name="master_einrichtung_id" id="bs_es_f_master">
+                                <option value=""><?php echo esc_html__('Eigenständig (kein übergeordneter Datensatz)', 'bs-awo-jobs-statistik'); ?></option>
+                                <?php foreach ($masterKandidaten as $mk) : ?>
+                                    <option value="<?php echo esc_attr((string) (int) ($mk['id'] ?? 0)); ?>" <?php selected($masterAktuell, (int) ($mk['id'] ?? 0)); ?>>
+                                        <?php echo esc_html(sprintf('ID %1$d — %2$s', (int) ($mk['id'] ?? 0), (string) ($mk['einrichtung'] ?? ''))); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description"><?php echo esc_html__('So ordnen Sie eine falsch geschriebene bzw. doppelte Einrichtung Ihrer Masterliste zu: dieselbe fachliche Einrichtung wie im Dropdown wählen und speichern. Die Stammdaten-Liste zeigt standardmäßig nur Master; der Alias bleibt in „Alle Datensätze“ sichtbar. Auswertung „Soll / Offen / Besetzt“: Offen-VZÄ über alle Namen des Clusters, Soll nur vom Master.', 'bs-awo-jobs-statistik'); ?></p>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php else : ?>
+                    <?php $masterKandidatenNeu = $repo->fetchRootMasterKandidatenFuerSelect(0); ?>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_masternew"><?php echo esc_html__('Gehört zu (Master)', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td>
+                        <select name="master_einrichtung_id" id="bs_es_f_masternew">
+                            <option value=""><?php echo esc_html__('Eigenständig (kein übergeordneter Datensatz)', 'bs-awo-jobs-statistik'); ?></option>
+                            <?php foreach ($masterKandidatenNeu as $mk) : ?>
+                                <option value="<?php echo esc_attr((string) (int) ($mk['id'] ?? 0)); ?>">
+                                    <?php echo esc_html(sprintf('ID %1$d — %2$s', (int) ($mk['id'] ?? 0), (string) ($mk['einrichtung'] ?? ''))); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <p class="description"><?php echo esc_html__('Optional: sofort als Alias eines bestehenden Masters anlegen (z. B. zweite Schreibweise derselben Einrichtung).', 'bs-awo-jobs-statistik'); ?></p>
+                    </td>
+                </tr>
+                <?php endif; ?>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_fb"><?php echo esc_html__('Fachbereich (Stellenbörse)', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td><input name="fachbereich_boerse" id="bs_es_f_fb" type="text" class="regular-text" value="<?php echo esc_attr($fbb); ?>"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_fbi"><?php echo esc_html__('Mandantenfeld (intern)', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td><input name="fachbereich_intern" id="bs_es_f_fbi" type="text" class="regular-text" value="<?php echo esc_attr($fbi); ?>"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><?php echo esc_html__('Aktiv', 'bs-awo-jobs-statistik'); ?></th>
+                    <td>
+                        <label><input type="checkbox" name="aktiv" value="1" <?php checked($aktiv, 1); ?>> <?php echo esc_html__('Einrichtung ist aktiv', 'bs-awo-jobs-statistik'); ?></label>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_bem"><?php echo esc_html__('Bemerkung', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td><textarea name="bemerkung" id="bs_es_f_bem" class="large-text" rows="4"><?php echo esc_textarea($bem); ?></textarea></td>
+                </tr>
+                <tr>
+                    <th colspan="2"><strong><?php echo esc_html__('Soll-VZÄ (Vorbereitung, ohne Auswertung)', 'bs-awo-jobs-statistik'); ?></strong></th>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_s1"><?php echo esc_html__('Soll VZÄ Fachkräfte', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td><input name="soll_vza_fachkraefte" id="bs_es_f_s1" type="text" class="small-text" value="<?php echo esc_attr($s('soll_vza_fachkraefte')); ?>" placeholder="z. B. 12,5"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_s2"><?php echo esc_html__('Soll VZÄ Hilfskräfte', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td><input name="soll_vza_hilfskraefte" id="bs_es_f_s2" type="text" class="small-text" value="<?php echo esc_attr($s('soll_vza_hilfskraefte')); ?>" placeholder="z. B. 3"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_s3"><?php echo esc_html__('Soll VZÄ 3', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td><input name="soll_vza_3" id="bs_es_f_s3" type="text" class="small-text" value="<?php echo esc_attr($s('soll_vza_3')); ?>"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_s4"><?php echo esc_html__('Soll VZÄ 4', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td><input name="soll_vza_4" id="bs_es_f_s4" type="text" class="small-text" value="<?php echo esc_attr($s('soll_vza_4')); ?>"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_s5"><?php echo esc_html__('Soll VZÄ 5', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td><input name="soll_vza_5" id="bs_es_f_s5" type="text" class="small-text" value="<?php echo esc_attr($s('soll_vza_5')); ?>"></td>
+                </tr>
+                <tr>
+                    <th scope="row"><?php echo esc_html__('Summe der Kategorien', 'bs-awo-jobs-statistik'); ?></th>
+                    <td class="description">
+                        <?php
+                        $sumRow = $row ?? [];
+                        echo esc_html(number_format(EinrichtungenStammSollVza::summeTeilwerte($sumRow), 2, ',', '.'));
+                        echo ' — ';
+                        echo esc_html__('wird verwendet, wenn kein manueller Gesamtwert gesetzt ist.', 'bs-awo-jobs-statistik');
+                        ?>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_gesamt_override"><?php echo esc_html__('Manuelle Gesamt-VZÄ (Override)', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td>
+                        <input name="gesamt_vza_override" id="bs_es_f_gesamt_override" type="text" class="small-text" value="<?php echo esc_attr($s('gesamt_vza_override')); ?>" placeholder="<?php echo esc_attr__('leer = automatisch', 'bs-awo-jobs-statistik'); ?>">
+                        <p class="description"><?php echo esc_html__('Wenn ausgefüllt, hat dieser Wert Vorrang vor der Summe der fünf Kategorien. Leer lassen für automatische Summe.', 'bs-awo-jobs-statistik'); ?></p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><?php echo esc_html__('Effektiver Gesamt-Sollwert', 'bs-awo-jobs-statistik'); ?></th>
+                    <td><strong><?php echo esc_html(number_format(EinrichtungenStammSollVza::effectiveGesamt($sumRow), 2, ',', '.')); ?></strong>
+                        <?php if (EinrichtungenStammSollVza::nutztManuellenGesamtwert($sumRow)) : ?>
+                            <span class="description"><?php echo esc_html__('(manueller Gesamtwert)', 'bs-awo-jobs-statistik'); ?></span>
+                        <?php else : ?>
+                            <span class="description"><?php echo esc_html__('(Summe der Kategorien)', 'bs-awo-jobs-statistik'); ?></span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php if ($row): ?>
+                <tr>
+                    <th scope="row"><?php echo esc_html__('Quelle', 'bs-awo-jobs-statistik'); ?></th>
+                    <td><code><?php echo esc_html((string) ($row['quelle'] ?? '–')); ?></code>
+                        <?php if (!empty($row['letzter_api_name'])): ?>
+                            <p class="description"><?php echo esc_html__('Letzter Name aus API/Seed:', 'bs-awo-jobs-statistik'); ?> <code><?php echo esc_html((string) $row['letzter_api_name']); ?></code></p>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_pruefstatus"><?php echo esc_html__('Prüfstatus', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td>
+                        <select name="pruefstatus" id="bs_es_f_pruefstatus">
+                            <option value="<?php echo esc_attr(EinrichtungenMatching::PRUEFSTATUS_OK); ?>" <?php selected((string) ($row['pruefstatus'] ?? ''), EinrichtungenMatching::PRUEFSTATUS_OK); ?>><?php echo esc_html__('OK', 'bs-awo-jobs-statistik'); ?></option>
+                            <option value="<?php echo esc_attr(EinrichtungenMatching::PRUEFSTATUS_PRUEFEN); ?>" <?php selected((string) ($row['pruefstatus'] ?? ''), EinrichtungenMatching::PRUEFSTATUS_PRUEFEN); ?>><?php echo esc_html__('Zu prüfen', 'bs-awo-jobs-statistik'); ?></option>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="bs_es_f_pruefhi"><?php echo esc_html__('Prüfhinweis', 'bs-awo-jobs-statistik'); ?></label></th>
+                    <td><textarea name="pruef_hinweis" id="bs_es_f_pruefhi" class="large-text" rows="3"><?php echo esc_textarea((string) ($row['pruef_hinweis'] ?? '')); ?></textarea></td>
+                </tr>
+                <?php endif; ?>
+            </table>
+            <?php submit_button($id > 0 ? __('Speichern', 'bs-awo-jobs-statistik') : __('Anlegen', 'bs-awo-jobs-statistik')); ?>
+        </form>
+        <?php
+    }
+
+    private function maybeHandleEinrichtungStammPost(): void
+    {
+        if (!isset($_POST['bs_awo_action']) || !current_user_can('manage_options')) {
+            return;
+        }
+        $action = sanitize_key((string) $_POST['bs_awo_action']);
+
+        if ($action === 'einrichtung_seed') {
+            if (!wp_verify_nonce($_POST['bs_awo_einrichtung_seed_nonce'] ?? '', 'bs_awo_einrichtung_seed')) {
+                return;
+            }
+            $repo = new EinrichtungenStammRepository($this->wpdb);
+            $sum = $repo->seedMissingFromAusschreibungen();
+            $redirect = $this->einrichtungStammRedirectArgsFromPost();
+            $redirect['bs_awo_notice'] = 'seeded';
+            $redirect['bs_awo_notice_neu'] = (string) $sum['neu'];
+            $redirect['bs_awo_notice_bereits'] = (string) $sum['bereits_zugeordnet'];
+            $redirect['bs_awo_notice_pruef'] = (string) $sum['prueffaelle'];
+            nocache_headers();
+            wp_safe_redirect(add_query_arg($redirect, admin_url('admin.php')), 303);
+            exit;
+        }
+
+        if ($action === 'einrichtung_save') {
+            if (!wp_verify_nonce($_POST['bs_awo_einrichtung_save_nonce'] ?? '', 'bs_awo_einrichtung_save')) {
+                return;
+            }
+            $repo = new EinrichtungenStammRepository($this->wpdb);
+            $id = (int) ($_POST['einrichtung_id'] ?? 0);
+            $einrichtung = sanitize_text_field(wp_unslash($_POST['einrichtung'] ?? ''));
+            if ($einrichtung === '') {
+                return;
+            }
+            $redirectBase = $this->einrichtungStammRedirectArgsFromPost();
+            $masterPost = isset($_POST['master_einrichtung_id']) ? trim(wp_unslash((string) $_POST['master_einrichtung_id'])) : '';
+            $masterParsed = null;
+            if ($masterPost !== '' && is_numeric($masterPost)) {
+                $mid = (int) $masterPost;
+                if ($mid > 0) {
+                    $masterParsed = $mid;
+                }
+            }
+            $errMaster = $repo->validateMasterZuordnung($id, $masterParsed);
+            if ($errMaster !== null) {
+                $redirectBase['bs_awo_notice'] = 'master_invalid';
+                $redirectBase['bs_awo_master_msg'] = rawurlencode($errMaster);
+                if ($id > 0) {
+                    $redirectBase['bs_es_edit'] = (string) $id;
+                } else {
+                    $redirectBase['bs_es_new'] = '1';
+                }
+                nocache_headers();
+                wp_safe_redirect(add_query_arg($redirectBase, admin_url('admin.php')), 303);
+                exit;
+            }
+
+            $tbl = $this->wpdb->prefix . Database::TABLE_EINRICHTUNGEN_STAMM;
+            $dupId = (int) $this->wpdb->get_var($this->wpdb->prepare(
+                "SELECT id FROM {$tbl} WHERE einrichtung = %s AND id != %d LIMIT 1",
+                $einrichtung,
+                $id
+            ));
+            if (
+                $dupId > 0
+                && !$repo->allowExactEinrichtungsnameTrotzTreffer($id, $dupId, $masterParsed)
+            ) {
+                $this->redirectEinrichtungStammDuplicateError($redirectBase, 'duplicate_exact', $dupId, $id);
+            }
+
+            $matchKey = EinrichtungenMatching::matchKeyFromRaw($einrichtung);
+            if ($matchKey !== '') {
+                $normDupId = $repo->firstConflictingIdForSameMatchKeyAfterSave($id, $matchKey, $masterParsed);
+                if ($normDupId !== null) {
+                    $this->redirectEinrichtungStammDuplicateError($redirectBase, 'duplicate_normalized', $normDupId, $id);
+                }
+            }
+
+            $data = [
+                'einrichtung' => $einrichtung,
+                'fachbereich_boerse' => sanitize_text_field(wp_unslash($_POST['fachbereich_boerse'] ?? '')),
+                'fachbereich_intern' => sanitize_text_field(wp_unslash($_POST['fachbereich_intern'] ?? '')),
+                'aktiv' => !empty($_POST['aktiv']) ? 1 : 0,
+                'bemerkung' => sanitize_textarea_field(wp_unslash($_POST['bemerkung'] ?? '')),
+                'soll_vza_fachkraefte' => $this->parseOptionalDecimal('soll_vza_fachkraefte'),
+                'soll_vza_hilfskraefte' => $this->parseOptionalDecimal('soll_vza_hilfskraefte'),
+                'soll_vza_3' => $this->parseOptionalDecimal('soll_vza_3'),
+                'soll_vza_4' => $this->parseOptionalDecimal('soll_vza_4'),
+                'soll_vza_5' => $this->parseOptionalDecimal('soll_vza_5'),
+                'gesamt_vza_override' => $this->parseOptionalDecimal('gesamt_vza_override'),
+                'pruefstatus' => isset($_POST['pruefstatus']) ? sanitize_key(wp_unslash((string) $_POST['pruefstatus'])) : EinrichtungenMatching::PRUEFSTATUS_OK,
+                'pruef_hinweis' => sanitize_textarea_field(wp_unslash($_POST['pruef_hinweis'] ?? '')),
+                'master_einrichtung_id' => $masterParsed,
+            ];
+
+            if ($id > 0) {
+                $repo->update($id, $data);
+            } else {
+                $repo->insert($data);
+            }
+
+            $redirect = $this->einrichtungStammRedirectArgsFromPost();
+            $redirect['bs_awo_notice'] = 'saved';
+            nocache_headers();
+            wp_safe_redirect(add_query_arg($redirect, admin_url('admin.php')), 303);
+            exit;
+        }
+    }
+
+    /**
+     * Dubletten-Schutz: Redirect zurück ins Formular / neue Maske mit Fehler-Notice (kein wp_die).
+     *
+     * @param array<string, string|int> $redirectBase
+     */
+    private function redirectEinrichtungStammDuplicateError(array $redirectBase, string $noticeSlug, int $konfliktId, int $bearbeitungsId): void
+    {
+        $redirectBase['bs_awo_notice'] = $noticeSlug;
+        $redirectBase['bs_awo_conflict_id'] = (string) $konfliktId;
+        if ($bearbeitungsId > 0) {
+            $redirectBase['bs_es_edit'] = (string) $bearbeitungsId;
+        } else {
+            $redirectBase['bs_es_new'] = '1';
+        }
+        nocache_headers();
+        wp_safe_redirect(add_query_arg($redirectBase, admin_url('admin.php')), 303);
+        exit;
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private function einrichtungStammRedirectArgsFromPost(): array
+    {
+        $out = ['page' => self::PAGE_EINRICHTUNGEN];
+        foreach ($_POST as $k => $v) {
+            if (!is_string($k) || strpos($k, 'filter_ret_') !== 0) {
+                continue;
+            }
+            $param = substr($k, strlen('filter_ret_'));
+            if ($param === '' || $param === 'page') {
+                continue;
+            }
+            $out[$param] = sanitize_text_field(wp_unslash((string) $v));
+        }
+
+        return $out;
+    }
+
+    private function parseOptionalDecimal(string $postKey): ?float
+    {
+        $raw = isset($_POST[$postKey]) ? wp_unslash((string) $_POST[$postKey]) : '';
+        $raw = trim(str_replace(',', '.', $raw));
+        if ($raw === '') {
+            return null;
+        }
+
+        return is_numeric($raw) ? (float) $raw : null;
     }
 }

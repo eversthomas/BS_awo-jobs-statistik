@@ -36,6 +36,9 @@ require_once __DIR__ . '/src/Core/Installer.php';
 \add_action(\BS_Awo_Jobs_Statistik\WordPress\Cron\CronHandler::HOOK, [\BS_Awo_Jobs_Statistik\WordPress\Cron\CronHandler::class, 'run']);
 
 if (is_admin()) {
+    \add_action('admin_init', static function () {
+        \BS_Awo_Jobs_Statistik\Core\Installer::ensureSchemaUpToDate();
+    }, 5);
     \add_action('admin_menu', static function () {
         $admin = new \BS_Awo_Jobs_Statistik\WordPress\Admin\AdminPage($GLOBALS['wpdb']);
         $admin->registerMenu();

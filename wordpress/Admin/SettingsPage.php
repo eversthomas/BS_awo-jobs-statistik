@@ -138,6 +138,7 @@ final class SettingsPage
             Database::TABLE_ZUORDNUNGEN,
             Database::TABLE_SNAPSHOTS,
             Database::TABLE_KONFIGURATION,
+            Database::TABLE_EINRICHTUNGEN_STAMM,
         ];
 
         foreach ($tables as $t) {
